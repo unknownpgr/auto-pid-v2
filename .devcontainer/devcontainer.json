@@ -1,0 +1,17 @@
+{
+	"name": "Auto PID",
+	"image": "mcr.microsoft.com/devcontainers/typescript-node:1-20-bullseye",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"mhutchie.git-graph",
+				"esbenp.prettier-vscode",
+				"streetsidesoftware.code-spell-checker",
+				"wayou.vscode-todo-highlight",
+				"GitHub.copilot",
+				"dbaeumer.vscode-eslint",
+				"yoavbls.pretty-ts-errors"
+			]
+		}
+	}
+}
