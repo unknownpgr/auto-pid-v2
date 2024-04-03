@@ -1,6 +1,13 @@
 {
   "dependencies": {
+    "@types/node": "^20.12.3",
+    "canvas": "^2.11.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.3"
-  }
+  },
+  "name": "auto-pid",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "unknownpgr <unknownpgr@gmail.com>",
+  "license": "MIT"
 }
