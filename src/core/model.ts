@@ -23,20 +23,24 @@ export abstract class Operation {
   public getId() {
     return this.id;
   }
-
-  public getOutputNode() {
-    return this.getId();
-  }
 }
 
 export abstract class Nullary<Out = number> extends Operation {
   abstract transfer(): Out;
+
+  get out() {
+    return this.getId();
+  }
 }
 
 export abstract class Unary<In = number, Out = number> extends Operation {
   abstract transfer(value: In): Out;
 
-  public getInputNode() {
+  get out() {
+    return this.getId();
+  }
+
+  get in() {
     return this.getId() + 1;
   }
 }
@@ -48,12 +52,38 @@ export abstract class Binary<
 > extends Operation {
   abstract transfer(value1: In1, value2: In2): Out;
 
-  public getInputNode1() {
+  get out() {
+    return this.getId();
+  }
+
+  get in1() {
     return this.getId() + 1;
   }
 
-  public getInputNode2() {
+  get in2() {
     return this.getId() + 2;
+  }
+}
+
+export class Output extends Operation {
+  private readonly name: string;
+  private data: number[] = [];
+
+  constructor(name: string) {
+    super();
+    this.name = name;
+  }
+
+  get in() {
+    return this.getId() + 1;
+  }
+
+  public transfer(value: number): void {
+    this.data.push(value);
+  }
+
+  public report(): Report {
+    return { title: this.name, data: this.data };
   }
 }
 
@@ -63,15 +93,16 @@ export interface Report {
 }
 
 export class System {
+  private dt: number = 0.01;
   private readonly edge: Map<number, number[]> = new Map();
   private readonly operations: Map<number, Operation> = new Map();
-  private readonly nodeEdgeMapping: Map<number, number> = new Map();
-  private readonly isInitialized: boolean = false;
+  private readonly nodeEdgeMapping: Map<number, number> = new Map(); // node -> edge
+  private isInitialized: boolean = false;
   private readonly history: Map<number, Report> = new Map();
-  private output: Map<number, number> = new Map();
+  private output: Map<number, number> = new Map(); // edge -> value
 
   private getOperationId(nodeId: number) {
-    return Math.floor(nodeId / 3);
+    return Math.floor(nodeId / 3) * 3;
   }
 
   private isOutputNode(nodeId: number) {
@@ -106,19 +137,30 @@ export class System {
     return operation instanceof Binary;
   }
 
+  private isOutput(operation: Operation): operation is Output {
+    return operation instanceof Output;
+  }
+
   private check() {
     for (const operation of this.operations.values()) {
-      if (!this.isConnected(operation.getOutputNode()))
-        throw new Error(`Node ${operation.getOutputNode()} is not connected`);
-      if (this.isUnary(operation)) {
-        if (!this.isConnected(operation.getInputNode()))
-          throw new Error(`Node ${operation.getInputNode()} is not connected`);
-      }
-      if (this.isBinary(operation)) {
-        if (!this.isConnected(operation.getInputNode1()))
-          throw new Error(`Node ${operation.getInputNode1()} is not connected`);
-        if (!this.isConnected(operation.getInputNode2()))
-          throw new Error(`Node ${operation.getInputNode2()} is not connected`);
+      if (this.isNullary(operation)) {
+        if (!this.isConnected(operation.out))
+          throw new Error(`Node ${operation.out} is not connected`);
+      } else if (this.isUnary(operation)) {
+        if (!this.isConnected(operation.in))
+          throw new Error(`Node ${operation.in} is not connected`);
+        if (!this.isConnected(operation.out))
+          throw new Error(`Node ${operation.out} is not connected`);
+      } else if (this.isBinary(operation)) {
+        if (!this.isConnected(operation.in1))
+          throw new Error(`Node ${operation.in1} is not connected`);
+        if (!this.isConnected(operation.in2))
+          throw new Error(`Node ${operation.in2} is not connected`);
+        if (!this.isConnected(operation.out))
+          throw new Error(`Node ${operation.out} is not connected`);
+      } else if (this.isOutput(operation)) {
+        if (!this.isConnected(operation.in))
+          throw new Error(`Node ${operation.in} is not connected`);
       }
     }
   }
@@ -134,14 +176,22 @@ export class System {
 
   public connect(from: number, to: number) {
     if (this.isInitialized) throw new Error("System is already initialized");
+
+    // Check if the nodes exist
     if (!this.hasNode(from)) throw new Error(`Node ${from} does not exist`);
     if (!this.hasNode(to)) throw new Error(`Node ${to} does not exist`);
+
+    // Check if the node types are correct
     if (!this.isOutputNode(from))
       throw new Error(`Node ${from} is not an output node`);
     if (this.isOutputNode(to))
       throw new Error(`Node ${to} is not an input node`);
+
+    // Check if to node is already connected
     if (this.isConnected(to))
       throw new Error(`Node ${to} is already connected`);
+
+    // Connect the nodes
     if (this.edge.has(from)) {
       this.edge.get(from)!.push(to);
     } else {
@@ -159,6 +209,13 @@ export class System {
     this.history.set(nodeId, { title, data: [] });
   }
 
+  public setDt(dt: number) {
+    if (this.isInitialized) throw new Error("System is already initialized");
+    if (dt <= 0) throw new Error("dt must be greater than 0");
+    if (dt < EPSILON) throw new Error("dt is too small");
+    this.dt = dt;
+  }
+
   public init() {
     if (this.isInitialized) throw new Error("System is already initialized");
     this.check();
@@ -171,30 +228,41 @@ export class System {
       this.output.set(id, 0);
       id++;
     }
+    for (const operation of this.operations.values()) {
+      operation.setDt(this.dt);
+    }
+    this.isInitialized = true;
   }
 
   public step() {
     if (!this.isInitialized) throw new Error("System is not initialized");
     const output = new Map<number, number>();
     for (const operation of this.operations.values()) {
-      const outputNode = operation.getOutputNode();
       let outputValue = 0;
+      if (this.isOutput(operation)) {
+        const edge = this.nodeEdgeMapping.get(operation.in)!;
+        const input = this.output.get(edge)!;
+        operation.transfer(input);
+        continue;
+      }
       if (this.isNullary(operation)) {
         outputValue = operation.transfer();
-      }
-      if (this.isUnary(operation)) {
-        const edge = this.nodeEdgeMapping.get(operation.getInputNode())!;
+      } else if (this.isUnary(operation)) {
+        const edge = this.nodeEdgeMapping.get(operation.in)!;
         const input = this.output.get(edge)!;
         outputValue = operation.transfer(input);
-      }
-      if (this.isBinary(operation)) {
-        const edge1 = this.nodeEdgeMapping.get(operation.getInputNode1())!;
-        const edge2 = this.nodeEdgeMapping.get(operation.getInputNode2())!;
+      } else if (this.isBinary(operation)) {
+        const edge1 = this.nodeEdgeMapping.get(operation.in1)!;
+        const edge2 = this.nodeEdgeMapping.get(operation.in2)!;
         const input1 = this.output.get(edge1)!;
         const input2 = this.output.get(edge2)!;
         outputValue = operation.transfer(input1, input2);
       }
-      output.set(outputNode, outputValue);
+
+      const op = operation as Nullary;
+      const outputNode = op.out;
+      const edge = this.nodeEdgeMapping.get(outputNode)!;
+      output.set(edge, outputValue);
       if (this.history.has(outputNode)) {
         this.history.get(outputNode)!.data.push(outputValue);
       }
@@ -202,7 +270,21 @@ export class System {
     this.output = output;
   }
 
+  public run(duration: number) {
+    const steps = Math.floor(duration / this.dt);
+    for (let i = 0; i < steps; i++) this.step();
+  }
+
   public report() {
-    return Array.from(this.history.values());
+    const reports: Report[] = [];
+    for (const report of this.history.values()) {
+      reports.push(report);
+    }
+    for (const operation of this.operations.values()) {
+      if (this.isOutput(operation)) {
+        reports.push(operation.report());
+      }
+    }
+    return reports;
   }
 }
