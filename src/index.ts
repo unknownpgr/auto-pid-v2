@@ -1,36 +1,15 @@
-import { Block } from "./core/model";
-import { Clipping } from "./modules/clipping";
 import { createCanvas } from "canvas";
 import fs from "fs/promises";
-import { Combine } from "./modules/combine";
-import { Delay } from "./modules/delay";
+import { Output, Report, System } from "./core/model";
 import { IIR1 } from "./modules/iir";
+import { Input } from "./modules/input";
 
-function input(t: number) {
-  return Math.sin(t);
+function func(t: number) {
+  if (t < 1) return 0;
+  else return 1;
 }
 
-function test(
-  input: (t: number) => number,
-  block: Block<number>,
-  duration: number = 10,
-  dt: number = 0.01
-) {
-  const inputs = [];
-  const outputs = [];
-  for (let t = 0; t < duration; t += dt) {
-    const value = input(t);
-    const output = block.transfer(value);
-    inputs.push(value);
-    outputs.push(output);
-  }
-  return { inputs, outputs };
-}
-
-async function visualize(
-  data: { inputs: number[]; outputs: number[] },
-  filename = "graph.png"
-) {
+async function visualize(reports: Report[], filename = "graph.png") {
   const canvas = createCanvas(800, 600);
   const ctx = canvas.getContext("2d");
 
@@ -38,18 +17,24 @@ async function visualize(
   ctx.fillStyle = "white";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const min = Math.min(...data.inputs, ...data.outputs);
-  const max = Math.max(...data.inputs, ...data.outputs);
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+
+  for (const report of reports) {
+    min = Math.min(min, ...report.data);
+    max = Math.max(max, ...report.data);
+  }
+  const margin = 0.1 * (max - min);
 
   const drawCurve = (values: number[]) => {
     ctx.beginPath();
 
     const xScale = canvas.width / values.length;
-    const yScale = canvas.height / (max - min);
+    const yScale = canvas.height / (max - min + 2 * margin);
 
     for (let i = 0; i < values.length; i++) {
       const x = i * xScale;
-      const y = canvas.height - (values[i] - min) * yScale;
+      const y = canvas.height - (values[i] - min) * yScale - margin * yScale;
       if (i === 0) {
         ctx.moveTo(x, y);
       } else {
@@ -60,14 +45,33 @@ async function visualize(
     ctx.stroke();
   };
 
-  // Draw the input
-  ctx.strokeStyle = "black";
-  ctx.lineWidth = 2;
-  drawCurve(data.inputs);
+  const colorTable = [
+    "black",
+    "red",
+    "green",
+    "blue",
+    "purple",
+    "cyan",
+    "magenta",
+    "yellow",
+    "orange",
+    "brown",
+    "pink",
+    "gray",
+    "lightblue",
+    "lightgreen",
+    "lightpink",
+    "lightyellow",
+    "lightgray",
+  ];
 
-  // Draw the output
-  ctx.strokeStyle = "red";
-  drawCurve(data.outputs);
+  for (let i = 0; i < reports.length; i++) {
+    ctx.strokeStyle = colorTable[i % colorTable.length];
+    drawCurve(reports[i].data);
+    ctx.fillStyle = "black";
+    ctx.font = "20px Arial";
+    ctx.fillText(reports[i].title, 10, 30 * (i + 1));
+  }
 
   // Save the canvas to a file
   const buffer = canvas.toBuffer();
@@ -75,13 +79,21 @@ async function visualize(
 }
 
 async function main() {
-  const block = new Combine(
-    new Clipping(-0.5, 0.5),
-    new Delay(0.01, 0.1),
-    new IIR1(0.1, 0.9)
-  );
-  const data = test(input, block);
-  await visualize(data);
+  const input = new Input(func);
+  const iir = new IIR1(0.01);
+  const output = new Output("Output");
+
+  const system = new System();
+  system.register(input, iir, output);
+  system.connect(input.out, iir.in);
+  system.connect(iir.out, output.in);
+  system.setDt(0.01);
+  system.probe(input.out, "Input");
+  system.init();
+  system.run(10);
+
+  const reports: Report[] = system.report();
+  await visualize(reports);
 }
 
 main();
