@@ -1,9 +1,7 @@
-import { Block } from "../core/model";
+import { Unary } from "../core/model";
 
-export class Derivative implements Block<number> {
+export class Derivative extends Unary {
   private previous = 0;
-
-  constructor(private readonly dt: number) {}
 
   transfer(value: number): number {
     const derivative = (value - this.previous) / this.dt;

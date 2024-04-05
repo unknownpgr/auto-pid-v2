@@ -1,12 +1,13 @@
-import { Block } from "../core/model";
+import { Unary } from "../core/model";
 
-export class Delay implements Block<number> {
+export class Delay extends Unary {
   private buffer: number[];
   private length = 0;
   private index = 0;
 
-  constructor(dt: number, delay: number) {
-    this.length = Math.round(delay / dt);
+  constructor(delay: number) {
+    super();
+    this.length = Math.round(delay / this.dt);
     this.buffer = new Array(this.length).fill(0);
   }
 

@@ -1,13 +1,14 @@
-import { Block } from "../core/model";
+import { Unary } from "../core/model";
 
-export class IIR1 implements Block<number> {
+export class IIR1 extends Unary {
   private a: number;
   private b: number;
   private buffer = 0;
 
-  constructor(a: number, b: number) {
+  constructor(a: number, b?: number) {
+    super();
     this.a = a;
-    this.b = b;
+    this.b = b || 1 - a;
   }
 
   transfer(value: number): number {

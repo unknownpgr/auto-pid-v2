@@ -1,9 +1,7 @@
-import { Block } from "../core/model";
+import { Unary } from "../core/model";
 
-export class Integral implements Block<number> {
+export class Integral extends Unary {
   private sum = 0;
-
-  constructor(private readonly dt: number) {}
 
   transfer(value: number): number {
     this.sum += value * this.dt;
