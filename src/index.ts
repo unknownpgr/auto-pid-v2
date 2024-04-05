@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import { Output, Report, System } from "./core/model";
 import { IIR1 } from "./modules/iir";
 import { Input } from "./modules/input";
+import { Subtract } from "./modules/subtract";
 
 function func(t: number) {
   if (t < 1) return 0;
@@ -79,17 +80,28 @@ async function visualize(reports: Report[], filename = "graph.png") {
 }
 
 async function main() {
+  // Define operations
   const input = new Input(func);
   const iir = new IIR1(0.01);
+  const sub = new Subtract();
+  const inputProbe = new Output("Input");
   const output = new Output("Output");
+  const error = new Output("Error");
 
+  // Define the system
   const system = new System();
-  system.register(input, iir, output);
+  system.register(input, iir, sub, inputProbe, output, error);
   system.connect(input.out, iir.in);
+  system.connect(input.out, inputProbe.in);
   system.connect(iir.out, output.in);
+  system.connect(input.out, sub.in1);
+  system.connect(iir.out, sub.in2);
+  system.connect(sub.out, error.in);
+
+  // Initialize the system
   system.setDt(0.01);
-  system.probe(input.out, "Input");
   system.init();
+
   system.run(10);
 
   const reports: Report[] = system.report();

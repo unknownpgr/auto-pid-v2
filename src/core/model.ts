@@ -93,12 +93,11 @@ export interface Report {
 }
 
 export class System {
-  private dt: number = 0.01;
   private readonly edge: Map<number, number[]> = new Map();
   private readonly operations: Map<number, Operation> = new Map();
   private readonly nodeEdgeMapping: Map<number, number> = new Map(); // node -> edge
+  private dt: number = 0.01;
   private isInitialized: boolean = false;
-  private readonly history: Map<number, Report> = new Map();
   private output: Map<number, number> = new Map(); // edge -> value
 
   private getOperationId(nodeId: number) {
@@ -199,16 +198,6 @@ export class System {
     }
   }
 
-  public probe(nodeId: number, title: string) {
-    if (this.isInitialized) throw new Error("System is already initialized");
-    if (!this.hasNode(nodeId)) throw new Error(`Node ${nodeId} does not exist`);
-    if (!this.isOutputNode(nodeId))
-      throw new Error(`Node ${nodeId} is not an output node`);
-    if (this.history.has(nodeId))
-      throw new Error(`Node ${nodeId} is already probed`);
-    this.history.set(nodeId, { title, data: [] });
-  }
-
   public setDt(dt: number) {
     if (this.isInitialized) throw new Error("System is already initialized");
     if (dt <= 0) throw new Error("dt must be greater than 0");
@@ -263,9 +252,6 @@ export class System {
       const outputNode = op.out;
       const edge = this.nodeEdgeMapping.get(outputNode)!;
       output.set(edge, outputValue);
-      if (this.history.has(outputNode)) {
-        this.history.get(outputNode)!.data.push(outputValue);
-      }
     }
     this.output = output;
   }
@@ -277,9 +263,6 @@ export class System {
 
   public report() {
     const reports: Report[] = [];
-    for (const report of this.history.values()) {
-      reports.push(report);
-    }
     for (const operation of this.operations.values()) {
       if (this.isOutput(operation)) {
         reports.push(operation.report());
