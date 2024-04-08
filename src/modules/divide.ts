@@ -1,7 +1,7 @@
 import { Binary } from "../core/model";
 
-export class Multiply extends Binary {
+export class Divide extends Binary {
   transfer(in1: number, in2: number): number {
-    return in1 * in2;
+    return in1 / in2;
   }
 }

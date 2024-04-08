@@ -8,4 +8,8 @@ export class Constant extends Nullary {
   transfer(): number {
     return this.value;
   }
+
+  public default(): number {
+    return this.value;
+  }
 }

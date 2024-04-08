@@ -31,6 +31,10 @@ export abstract class Nullary<Out = number> extends Operation {
   get out() {
     return this.getId();
   }
+
+  public default() {
+    return 0;
+  }
 }
 
 export abstract class Unary<In = number, Out = number> extends Operation {
@@ -208,6 +212,7 @@ export class System {
   public init() {
     if (this.isInitialized) throw new Error("System is already initialized");
     this.check();
+
     let id = 0;
     for (const [from, to] of this.edge) {
       this.nodeEdgeMapping.set(from, id);
@@ -217,9 +222,18 @@ export class System {
       this.output.set(id, 0);
       id++;
     }
+
     for (const operation of this.operations.values()) {
       operation.setDt(this.dt);
     }
+
+    for (const operation of this.operations.values()) {
+      if (this.isNullary(operation)) {
+        const edge = this.nodeEdgeMapping.get(operation.out)!;
+        this.output.set(edge, operation.default());
+      }
+    }
+
     this.isInitialized = true;
   }
 
