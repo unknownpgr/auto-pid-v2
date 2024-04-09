@@ -10,22 +10,38 @@
         height: 100%;
         margin: 0;
         padding: 0;
+        position: relative;
       }
+
       #cnv {
         width: 100%;
         height: 100%;
+      }
+
+      #operations {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 5rem;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.5);
+        display: flex;
+        flex-direction: column;
+        padding: 1.5rem 1rem;
+        gap: 1rem;
       }
     </style>
     <title>Document</title>
   </head>
   <body>
     <canvas id="cnv"></canvas>
+    <div id="operations"></div>
   </body>
   <script>
     // Logic
 
-    const operations = [];
-    const edges = [];
+    let operations = [];
+    let edges = [];
     let counter = 0;
 
     const addOperation = (type, inputNumber, outputNumber, x, y) => {
@@ -78,7 +94,13 @@
 
     const connect = (from, to) => {
       if (!isConnectable(from, to)) return;
+      if (from.type === "input") [from, to] = [to, from];
       edges.push([from, to]);
+    };
+
+    const disconnect = (to) => {
+      const toHash = hashNode(to);
+      edges = edges.filter(([_, to]) => hashNode(to) !== toHash);
     };
 
     const findOperation = (id) => {
@@ -94,6 +116,85 @@
       throw Error("Unknown object type");
     };
 
+    // Utilities
+
+    const OPERATION_TYPES = [
+      {
+        type: "sum",
+        inputNumber: 2,
+        outputNumber: 1,
+      },
+      {
+        type: "sub",
+        inputNumber: 2,
+        outputNumber: 1,
+      },
+      {
+        type: "mul",
+        inputNumber: 2,
+        outputNumber: 1,
+      },
+      {
+        type: "div",
+        inputNumber: 2,
+        outputNumber: 1,
+      },
+      {
+        type: "input",
+        inputNumber: 0,
+        outputNumber: 1,
+      },
+      {
+        type: "output",
+        inputNumber: 1,
+        outputNumber: 0,
+      },
+      {
+        type: "integral",
+        inputNumber: 1,
+        outputNumber: 1,
+      },
+      {
+        type: "derivative",
+        inputNumber: 1,
+        outputNumber: 1,
+      },
+      {
+        type: "irr",
+        inputNumber: 1,
+        outputNumber: 1,
+      },
+      {
+        type: "time",
+        inputNumber: 0,
+        outputNumber: 1,
+      },
+    ];
+
+    const onOperationTypeClicked = (operationType) => {
+      if (selectedNode) return;
+      if (selectedOperation) return;
+      selectedOperation = addOperation(
+        operationType.type,
+        operationType.inputNumber,
+        operationType.outputNumber,
+        0,
+        0
+      );
+    };
+
+    const init = () => {
+      const operationsDiv = document.getElementById("operations");
+      for (const op of OPERATION_TYPES) {
+        const button = document.createElement("button");
+        button.textContent = op.type;
+        button.addEventListener("click", () => onOperationTypeClicked(op));
+        operationsDiv.appendChild(button);
+      }
+    };
+
+    init();
+
     // Graphics logic layer
 
     const OP_WIDTH = 100;
@@ -107,9 +208,9 @@
     let mouseX = 0;
     let mouseY = 0;
 
-    const getOpRect = (op) => {
+    const getOperationRect = (op) => {
       const n = Math.max(op.inputNumber, op.outputNumber);
-      const height = (n - 1) * NODE_GAP;
+      const height = n * NODE_GAP;
       return {
         x: op.x,
         y: op.y,
@@ -130,7 +231,7 @@
       const op = findOperation(node.operationId);
       const m = Math.max(op.inputNumber, op.outputNumber);
       const nodes = node.type === "input" ? op.inputNumber : op.outputNumber;
-      const y = op.y + (node.number + (m - nodes) / 2) * NODE_GAP;
+      const y = op.y + (node.number + (m - nodes + 1) / 2) * NODE_GAP;
       return y;
     };
 
@@ -179,8 +280,9 @@
       mouseY = y;
 
       if (selectedOperation) {
-        selectedOperation.x = mouseX;
-        selectedOperation.y = mouseY;
+        const rect = getOperationRect(selectedOperation);
+        selectedOperation.x = mouseX - rect.width / 2;
+        selectedOperation.y = mouseY - rect.height / 2;
       }
     };
 
@@ -204,36 +306,49 @@
       if (nearest) return nearest;
 
       for (const op of operations) {
-        const rect = getOpRect(op);
+        const rect = getOperationRect(op);
         if (mouseX < rect.x || mouseX > rect.x + rect.width) continue;
         if (mouseY < rect.y || mouseY > rect.y + rect.height) continue;
         return op;
       }
     };
 
+    const getInt = (promptText) => {
+      while (true) {
+        const input = prompt(promptText);
+        const number = parseInt(input);
+        if (!isNaN(number)) return number;
+      }
+    };
+
     const click = () => {
       const near = getNearestObject();
 
-      if (!selectedOperation && !selectedNode && !near) {
-        // Create new operation
-        const op = addOperation("add", 2, 1, mouseX, mouseY);
-        selectedOperation = op;
-      } else if (selectedOperation) {
+      if (selectedOperation) {
         // Placing operation
         selectedOperation = null;
-      } else if (selectedNode) {
+        return;
+      }
+
+      if (selectedNode) {
         // Connecting nodes
         if (near && getObjectType(near) === "node") {
           connect(selectedNode, near);
         }
         selectedNode = null;
-      } else {
-        // Selecting operation or node
-        if (getObjectType(near) === "operation") {
-          selectedOperation = near;
-        } else {
-          selectedNode = near;
-        }
+        return;
+      }
+
+      // Select operation
+      if (getObjectType(near) === "operation") {
+        selectedOperation = near;
+        return;
+      }
+
+      if (getObjectType(near) === "node") {
+        if (near.type === "input") disconnect(near);
+        selectedNode = near;
+        return;
       }
     };
 
@@ -287,11 +402,20 @@
       let cursorY = mouseY;
       const nearest = getNearestObject();
       if (nearest) {
-        if (getObjectType(nearest) === "operation") {
-          const rect = getOpRect(nearest);
+        if (
+          !selectedOperation &&
+          !selectedNode &&
+          getObjectType(nearest) === "operation"
+        ) {
+          const rect = getOperationRect(nearest);
           cursorX = rect.x + rect.width / 2;
           cursorY = rect.y + rect.height / 2;
-        } else {
+        } else if (
+          (selectedNode &&
+            getObjectType(nearest) === "node" &&
+            isConnectable(selectedNode, nearest)) ||
+          (!selectedNode && !selectedOperation)
+        ) {
           const pos = getNodePosition(nearest);
           cursorX = pos.x;
           cursorY = pos.y;
@@ -302,9 +426,13 @@
       ctx.stroke();
 
       for (const op of operations) {
-        const rect = getOpRect(op);
+        const rect = getOperationRect(op);
         ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+        ctx.fillText(op.type, rect.x + 5, rect.y + 15);
         for (const node of listNodes(op)) {
+          if (selectedNode && !isConnectable(selectedNode, node)) {
+            continue;
+          }
           const pos = getNodePosition(node);
           ctx.beginPath();
           ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
@@ -328,7 +456,7 @@
       }
 
       if (selectedOperation) {
-        const rect = getOpRect(selectedOperation);
+        const rect = getOperationRect(selectedOperation);
         ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
       }
 
@@ -336,7 +464,11 @@
         const pos = getNodePosition(selectedNode);
         const dir = getNodeDirection(selectedNode);
         let dir2 = 1;
-        if (nearest && getObjectType(nearest) === "node") {
+        if (
+          nearest &&
+          getObjectType(nearest) === "node" &&
+          isConnectable(selectedNode, nearest)
+        ) {
           dir2 = getNodeDirection(nearest);
         } else {
           dir2 = Math.sign(pos.x - cursorX);
