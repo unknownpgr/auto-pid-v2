@@ -8,6 +8,7 @@ import { Constant } from "./modules/constant";
 import { Multiply } from "./modules/multiply";
 import { Divide } from "./modules/divide";
 import { Integral } from "./modules/integral";
+import express from "express";
 
 function func(t: number) {
   if (t < 1) return 0;
@@ -83,7 +84,7 @@ async function visualize(reports: Report[], filename = "graph.png") {
   await fs.writeFile(filename, buffer);
 }
 
-async function test() {
+async function test1() {
   // Define operations
   const input = new Input(func);
   const iir = new IIR1(0.01);
@@ -114,7 +115,7 @@ async function test() {
   await visualize(reports);
 }
 
-async function main() {
+async function test2() {
   const input = new Input(func);
 
   const torque = new Subtract();
@@ -136,10 +137,10 @@ async function main() {
     inertia,
     a,
     w,
-    // theta,
+    theta,
     mu,
     friction,
-    // output,
+    output,
     inputProbe,
     torqueProbe,
     angularSpeedProbe
@@ -154,7 +155,8 @@ async function main() {
   system.connect(w.out, angularSpeedProbe.in);
   system.connect(w.out, friction.in1);
   system.connect(mu.out, friction.in2);
-  // system.connect(theta.out, output.in);
+  system.connect(w.out, theta.in);
+  system.connect(theta.out, output.in);
 
   system.setDt(0.01);
   system.init();
@@ -162,6 +164,14 @@ async function main() {
 
   const reports: Report[] = system.report();
   await visualize(reports);
+}
+
+async function main() {
+  const app = express();
+  app.use(express.static(__dirname + "/public"));
+  app.listen(3000, () => {
+    console.log("Server is running at http://localhost:3000");
+  });
 }
 
 main().catch((e) => console.error("\x1b[31m\x1b[1m" + e.message + "\x1b[0m"));
