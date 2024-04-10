@@ -1,4 +1,4 @@
-import { Nullary } from "../core/model";
+import { Nullary } from "../core/model.js";
 
 export class Input extends Nullary {
   private time = 0;

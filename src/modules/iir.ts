@@ -1,4 +1,4 @@
-import { Unary } from "../core/model";
+import { Unary } from "../core/model.js";
 
 export class IIR1 extends Unary {
   private a: number;

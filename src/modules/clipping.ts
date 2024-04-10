@@ -1,4 +1,4 @@
-import { Unary } from "../core/model";
+import { Unary } from "../core/model.js";
 
 export class Clipping extends Unary {
   constructor(private readonly min: number, private readonly max: number) {

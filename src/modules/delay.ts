@@ -1,4 +1,4 @@
-import { Unary } from "../core/model";
+import { Unary } from "../core/model.js";
 
 export class Delay extends Unary {
   private buffer: number[];

@@ -1,177 +1,551 @@
-import { createCanvas } from "canvas";
-import fs from "fs/promises";
-import { Output, Report, System } from "./core/model";
-import { IIR1 } from "./modules/iir";
-import { Input } from "./modules/input";
-import { Subtract } from "./modules/subtract";
-import { Constant } from "./modules/constant";
-import { Multiply } from "./modules/multiply";
-import { Divide } from "./modules/divide";
-import { Integral } from "./modules/integral";
-import express from "express";
-
-function func(t: number) {
-  if (t < 1) return 0;
-  else return 1;
+interface Operation {
+  id: number;
+  type: string;
+  inputNumber: number;
+  outputNumber: number;
+  x: number;
+  y: number;
+  flipped: boolean;
 }
 
-async function visualize(reports: Report[], filename = "graph.png") {
-  const canvas = createCanvas(800, 600);
-  const ctx = canvas.getContext("2d");
+interface OperationType {
+  type: string;
+  inputNumber: number;
+  outputNumber: number;
+}
 
-  // Clear the canvas
-  ctx.fillStyle = "white";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+type Type = "input" | "output";
 
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
+interface OpNode {
+  operationId: number;
+  type: Type;
+  number: number;
+}
 
-  for (const report of reports) {
-    min = Math.min(min, ...report.data);
-    max = Math.max(max, ...report.data);
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type Edge = [OpNode, OpNode];
+
+let operations: Operation[] = [];
+let edges: Edge[] = [];
+let counter = 0;
+
+const addOperation = (
+  type: string,
+  inputNumber: number,
+  outputNumber: number,
+  x: number,
+  y: number
+) => {
+  const op = {
+    id: counter++,
+    type,
+    inputNumber,
+    outputNumber,
+    x,
+    y,
+    flipped: false,
+  };
+  operations.push(op);
+  return op;
+};
+
+const listNodes = (op: Operation) => {
+  let nodes: OpNode[] = [];
+  for (let i = 0; i < op.inputNumber; i++) {
+    nodes.push({
+      operationId: op.id,
+      type: "input",
+      number: i,
+    });
   }
-  const margin = 0.1 * (max - min);
+  for (let i = 0; i < op.outputNumber; i++) {
+    nodes.push({
+      operationId: op.id,
+      type: "output",
+      number: i,
+    });
+  }
+  return nodes;
+};
 
-  const drawCurve = (values: number[]) => {
-    ctx.beginPath();
+const hashNode = (node: OpNode) => {
+  return `${node.operationId}-${node.type}-${node.number}`;
+};
 
-    const xScale = canvas.width / values.length;
-    const yScale = canvas.height / (max - min + 2 * margin);
+const isConnectable = (from: OpNode, to: OpNode) => {
+  if (from.type === to.type) return false;
+  if (from.type === "input") [from, to] = [to, from];
 
-    for (let i = 0; i < values.length; i++) {
-      const x = i * xScale;
-      const y = canvas.height - (values[i] - min) * yScale - margin * yScale;
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
+  const toHash = hashNode(to);
+  for (const [_, to] of edges) {
+    if (hashNode(to) === toHash) return false;
+  }
+
+  return true;
+};
+
+const connect = (from: OpNode, to: OpNode) => {
+  if (!isConnectable(from, to)) return;
+  if (from.type === "input") [from, to] = [to, from];
+  edges.push([from, to]);
+};
+
+const disconnect = (to: OpNode) => {
+  const toHash = hashNode(to);
+  edges = edges.filter(([_, to]) => hashNode(to) !== toHash);
+};
+
+const findOperation = (id: number) => {
+  for (const op of operations) {
+    if (op.id === id) return op;
+  }
+  throw Error("Operation not found");
+};
+
+const isOperation = (obj: any): obj is Operation => {
+  return obj.inputNumber !== undefined;
+};
+
+const isNode = (obj: any): obj is OpNode => {
+  return obj.operationId !== undefined;
+};
+
+// Utilities
+
+let selectedOperation: Operation | null = null;
+let selectedNode: OpNode | null = null;
+
+let mouseX = 0;
+let mouseY = 0;
+
+const OPERATION_TYPES: OperationType[] = [
+  {
+    type: "sum",
+    inputNumber: 2,
+    outputNumber: 1,
+  },
+  {
+    type: "sub",
+    inputNumber: 2,
+    outputNumber: 1,
+  },
+  {
+    type: "mul",
+    inputNumber: 2,
+    outputNumber: 1,
+  },
+  {
+    type: "div",
+    inputNumber: 2,
+    outputNumber: 1,
+  },
+  {
+    type: "input",
+    inputNumber: 0,
+    outputNumber: 1,
+  },
+  {
+    type: "output",
+    inputNumber: 1,
+    outputNumber: 0,
+  },
+  {
+    type: "integral",
+    inputNumber: 1,
+    outputNumber: 1,
+  },
+  {
+    type: "derivative",
+    inputNumber: 1,
+    outputNumber: 1,
+  },
+  {
+    type: "irr",
+    inputNumber: 1,
+    outputNumber: 1,
+  },
+  {
+    type: "time",
+    inputNumber: 0,
+    outputNumber: 1,
+  },
+];
+
+const createOperationFromType = (operationType: OperationType) => {
+  if (selectedNode) return;
+  if (selectedOperation) return;
+  selectedOperation = addOperation(
+    operationType.type,
+    operationType.inputNumber,
+    operationType.outputNumber,
+    0,
+    0
+  );
+};
+
+const generateJson = () => {
+  const json = {
+    operations: operations,
+    edges: edges,
+  };
+  console.log(json);
+};
+
+const init = () => {
+  const operationsDiv = document.getElementById("operations");
+  if (!operationsDiv) return;
+  for (const op of OPERATION_TYPES) {
+    const button = document.createElement("button");
+    button.textContent = op.type;
+    button.addEventListener("click", () => createOperationFromType(op));
+    operationsDiv.appendChild(button as unknown as Node);
+  }
+  const saveButton = document.createElement("button");
+  saveButton.textContent = "Save";
+  saveButton.addEventListener("click", generateJson);
+  operationsDiv.appendChild(saveButton as unknown as Node);
+};
+
+init();
+
+// Graphics logic layer
+
+const OP_WIDTH = 100;
+const NODE_GAP = 20;
+const NEAR_THRESHOLD = 10;
+
+const getOperationRect = (op: Operation): Rect => {
+  const n = Math.max(op.inputNumber, op.outputNumber);
+  const height = n * NODE_GAP;
+  return {
+    x: op.x,
+    y: op.y,
+    width: OP_WIDTH,
+    height,
+  };
+};
+
+const flipOperation = (op: Operation) => {
+  op.flipped = !op.flipped;
+};
+
+const isNodeFlipped = (node: OpNode) => {
+  return findOperation(node.operationId).flipped;
+};
+
+const getNodeY = (node: OpNode) => {
+  const op = findOperation(node.operationId);
+  const m = Math.max(op.inputNumber, op.outputNumber);
+  const nodes = node.type === "input" ? op.inputNumber : op.outputNumber;
+  const y = op.y + (node.number + (m - nodes + 1) / 2) * NODE_GAP;
+  return y;
+};
+
+const getNodeX = (node: OpNode) => {
+  if (!isNodeFlipped(node)) {
+    if (node.type === "input") {
+      return findOperation(node.operationId).x;
+    } else {
+      return findOperation(node.operationId).x + OP_WIDTH;
+    }
+  } else {
+    if (node.type === "input") {
+      return findOperation(node.operationId).x + OP_WIDTH;
+    } else {
+      return findOperation(node.operationId).x;
+    }
+  }
+};
+
+const getNodeDirection = (node: OpNode) => {
+  if (!isNodeFlipped(node)) {
+    if (node.type === "input") {
+      return -1;
+    } else {
+      return 1;
+    }
+  } else {
+    if (node.type === "input") {
+      return 1;
+    } else {
+      return -1;
+    }
+  }
+};
+
+const getNodePosition = (node: OpNode) => {
+  const op = findOperation(node.operationId);
+  const x = getNodeX(node);
+  const y = getNodeY(node);
+  return { x, y };
+};
+
+const setMousePosition = (x: number, y: number) => {
+  if (!selectedOperation) {
+    mouseX = x;
+    mouseY = y;
+  } else {
+    mouseX = Math.floor(x / 10) * 10;
+    mouseY = Math.floor(y / 10) * 10;
+  }
+
+  if (selectedOperation) {
+    const rect = getOperationRect(selectedOperation);
+    selectedOperation.x = mouseX - rect.width / 2;
+    selectedOperation.y = mouseY - rect.height / 2;
+  }
+};
+
+const getNearestObject = () => {
+  let nearest = null;
+  let minDistance = NEAR_THRESHOLD;
+
+  for (const op of operations) {
+    for (const node of listNodes(op)) {
+      const pos = getNodePosition(node);
+      const distance = Math.sqrt((pos.x - mouseX) ** 2 + (pos.y - mouseY) ** 2);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = node;
       }
     }
-
-    ctx.stroke();
-  };
-
-  const colorTable = [
-    "black",
-    "red",
-    "green",
-    "blue",
-    "purple",
-    "cyan",
-    "magenta",
-    "yellow",
-    "orange",
-    "brown",
-    "pink",
-    "gray",
-    "lightblue",
-    "lightgreen",
-    "lightpink",
-    "lightyellow",
-    "lightgray",
-  ];
-
-  for (let i = 0; i < reports.length; i++) {
-    ctx.strokeStyle = colorTable[i % colorTable.length];
-    drawCurve(reports[i].data);
-    ctx.fillStyle = colorTable[i % colorTable.length];
-    ctx.font = "15px Arial";
-    ctx.fillText(reports[i].title, 10, 20 * (i + 1));
   }
 
-  // Save the canvas to a file
-  const buffer = canvas.toBuffer();
-  await fs.writeFile(filename, buffer);
-}
+  if (nearest) return nearest;
 
-async function test1() {
-  // Define operations
-  const input = new Input(func);
-  const iir = new IIR1(0.01);
-  const sub = new Subtract();
-  const inputProbe = new Output("Input");
-  const output = new Output("Output");
-  const error = new Output("Error");
+  for (const op of operations) {
+    const rect = getOperationRect(op);
+    const distance = Math.sqrt(
+      (rect.x + rect.width / 2 - mouseX) ** 2 +
+        (rect.y + rect.height / 2 - mouseY) ** 2
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = op;
+    }
+  }
 
-  // Define the system
-  const system = new System();
-  system.register(input, iir, sub, inputProbe, output, error);
-  system.connect(input.out, iir.in);
-  system.connect(input.out, inputProbe.in);
-  system.connect(iir.out, output.in);
-  system.connect(input.out, sub.in1);
-  system.connect(iir.out, sub.in2);
-  system.connect(sub.out, error.in);
+  return nearest;
+};
 
-  // Initialize the system
-  system.setDt(0.01);
-  system.init();
+const click = () => {
+  // Place selected operation
+  if (selectedOperation) {
+    selectedOperation = null;
+    return;
+  }
 
-  // Run the system
-  system.run(10);
+  const near = getNearestObject();
 
-  // Visualize the result
-  const reports: Report[] = system.report();
-  await visualize(reports);
-}
+  // Connect selected node
+  if (selectedNode) {
+    if (near && isNode(near)) connect(selectedNode, near);
+    selectedNode = null;
+    return;
+  }
 
-async function test2() {
-  const input = new Input(func);
+  // Currently, there are no selected objects
+  if (!near) return;
 
-  const torque = new Subtract();
-  const inertia = new Constant(1);
-  const a = new Divide();
-  const w = new Integral();
-  const theta = new Integral();
-  const mu = new Constant(0.1);
-  const friction = new Multiply();
-  const output = new Output("Theta");
-  const inputProbe = new Output("Input");
-  const torqueProbe = new Output("Torque");
-  const angularSpeedProbe = new Output("Angular Speed");
+  // Select operation
+  if (isOperation(near)) {
+    selectedOperation = near;
+    return;
+  }
 
-  const system = new System();
-  system.register(
-    input,
-    torque,
-    inertia,
-    a,
-    w,
-    theta,
-    mu,
-    friction,
-    output,
-    inputProbe,
-    torqueProbe,
-    angularSpeedProbe
-  );
-  system.connect(input.out, torque.in1);
-  system.connect(input.out, inputProbe.in);
-  system.connect(friction.out, torque.in2);
-  system.connect(torque.out, a.in1);
-  system.connect(torque.out, torqueProbe.in);
-  system.connect(inertia.out, a.in2);
-  system.connect(a.out, w.in);
-  system.connect(w.out, angularSpeedProbe.in);
-  system.connect(w.out, friction.in1);
-  system.connect(mu.out, friction.in2);
-  system.connect(w.out, theta.in);
-  system.connect(theta.out, output.in);
+  if (isNode(near)) {
+    if (near.type === "input") disconnect(near);
+    selectedNode = near;
+    return;
+  }
+};
 
-  system.setDt(0.01);
-  system.init();
-  system.run(100);
+// Implementation layer
 
-  const reports: Report[] = system.report();
-  await visualize(reports);
-}
+const cnv = document.getElementById("cnv") as HTMLCanvasElement;
+if (!cnv) throw Error("Canvas not found");
+const ctx = cnv.getContext("2d");
+if (!ctx) throw Error("Context not found");
+const scale = 2;
 
-async function main() {
-  const app = express();
-  app.use(express.static(__dirname + "/public"));
-  app.listen(3000, () => {
-    console.log("Server is running at http://localhost:3000");
-  });
-}
+const getCubicCurveFunction = (
+  x1: number,
+  x2: number,
+  x_1: number,
+  x_2: number
+) => {
+  const a = x_1 + x_2 + 2 * x1 - 2 * x2;
+  const b = -2 * x_1 - x_2 - 3 * x1 + 3 * x2;
+  const c = x_1;
+  const d = x1;
+  return (t: number) => a * t ** 3 + b * t ** 2 + c * t + d;
+};
 
-main().catch((e) => console.error("\x1b[31m\x1b[1m" + e.message + "\x1b[0m"));
+const getEdgeCurve = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  dl = 1,
+  dr = 1,
+  k = 50
+) => {
+  const points = [];
+  const n = 100;
+  const _k = Math.pow(Math.abs(x1 - x2), 1 / 3) * k;
+  const fx = getCubicCurveFunction(x1, x2, _k * dl, -_k * dr);
+  const fy = getCubicCurveFunction(y1, y2, 0, 0);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const x = fx(t);
+    const y = fy(t);
+    points.push({ x, y });
+  }
+  return points;
+};
+
+const getCursorPosition = (nearest: any) => {
+  if (!nearest) return [mouseX, mouseY];
+
+  const selected = selectedOperation || selectedNode;
+
+  if (!selected && isOperation(nearest)) {
+    const rect = getOperationRect(nearest);
+    return [rect.x + rect.width / 2, rect.y + rect.height / 2];
+  }
+
+  if (!selected && isNode(nearest)) {
+    const pos = getNodePosition(nearest);
+    return [pos.x, pos.y];
+  }
+
+  if (selectedNode && isNode(nearest) && isConnectable(selectedNode, nearest)) {
+    const pos = getNodePosition(nearest);
+    return [pos.x, pos.y];
+  }
+
+  return [mouseX, mouseY];
+};
+
+const cursor = (x: number, y: number, nearest: any) => {
+  const sx = x * scale;
+  const sy = y * scale;
+  const sl = 5 * scale;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 4 * scale, 0, Math.PI * 2);
+  if (nearest) {
+    ctx.moveTo(sx - sl, sy - sl);
+    ctx.lineTo(sx + sl, sy + sl);
+    ctx.moveTo(sx + sl, sy - sl);
+    ctx.lineTo(sx - sl, sy + sl);
+  }
+  ctx.stroke();
+};
+
+const drawRect = ({ x, y, width, height }: Rect) => {
+  ctx.beginPath();
+  ctx.strokeRect(x * scale, y * scale, width * scale, height * scale);
+  ctx.stroke();
+};
+
+const dot = (x: number, y: number) => {
+  ctx.beginPath();
+  ctx.arc(x * scale, y * scale, 5, 0, Math.PI * 2);
+  ctx.fill();
+};
+
+const render = () => {
+  ctx.clearRect(0, 0, cnv.width, cnv.height);
+  ctx.font = `${12 * scale}px Arial`;
+  ctx.lineWidth = scale;
+
+  const nearest = getNearestObject();
+
+  let [cursorX, cursorY] = getCursorPosition(nearest);
+  cursor(cursorX, cursorY, nearest);
+
+  for (const op of operations) {
+    const rect = getOperationRect(op);
+    drawRect(rect);
+    ctx.fillText(op.type, (rect.x + 5) * scale, (rect.y + 15) * scale);
+    for (const node of listNodes(op)) {
+      if (selectedNode && !isConnectable(selectedNode, node)) continue;
+      const pos = getNodePosition(node);
+      dot(pos.x, pos.y);
+    }
+  }
+
+  for (const [from, to] of edges) {
+    const p1 = getNodePosition(from);
+    const p2 = getNodePosition(to);
+    const dir1 = getNodeDirection(from);
+    const dir2 = getNodeDirection(to);
+
+    const curve = getEdgeCurve(p1.x, p1.y, p2.x, p2.y, dir1, dir2);
+    ctx.beginPath();
+    ctx.moveTo(curve[0].x * scale, curve[0].y * scale);
+    for (const point of curve) {
+      ctx.lineTo(point.x * scale, point.y * scale);
+    }
+    ctx.stroke();
+  }
+
+  if (selectedOperation) {
+    const rect = getOperationRect(selectedOperation);
+    drawRect(rect);
+  }
+
+  if (selectedNode) {
+    const pos = getNodePosition(selectedNode);
+    const dir = getNodeDirection(selectedNode);
+    let dir2 = 1;
+    if (nearest && isNode(nearest) && isConnectable(selectedNode, nearest)) {
+      dir2 = getNodeDirection(nearest);
+    } else {
+      dir2 = Math.sign(pos.x - cursorX);
+    }
+
+    const curve = getEdgeCurve(pos.x, pos.y, cursorX, cursorY, dir, dir2);
+    ctx.beginPath();
+    ctx.moveTo(curve[0].x * scale, curve[0].y * scale);
+    for (const point of curve) {
+      ctx.lineTo(point.x * scale, point.y * scale);
+    }
+    ctx.stroke();
+  }
+};
+
+const loop = () => {
+  render();
+  requestAnimationFrame(loop);
+};
+
+const resizeCanvas = () => {
+  cnv.width = window.innerWidth * scale;
+  cnv.height = window.innerHeight * scale;
+};
+
+cnv.addEventListener("mousemove", (e) => {
+  setMousePosition(e.clientX, e.clientY);
+});
+
+cnv.addEventListener("click", click);
+
+document.body.addEventListener("keydown", (e) => {
+  // Flip when space is pressed
+  if (e.key !== " ") return;
+  if (!selectedOperation) return;
+  flipOperation(selectedOperation);
+});
+
+window.addEventListener("resize", resizeCanvas);
+
+window.addEventListener("load", resizeCanvas);
+
+loop();

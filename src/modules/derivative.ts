@@ -1,4 +1,4 @@
-import { Unary } from "../core/model";
+import { Unary } from "../core/model.js";
 
 export class Derivative extends Unary {
   private previous = 0;

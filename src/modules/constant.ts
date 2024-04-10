@@ -1,4 +1,4 @@
-import { Nullary } from "../core/model";
+import { Nullary } from "../core/model.js";
 
 export class Constant extends Nullary {
   constructor(private readonly value: number) {

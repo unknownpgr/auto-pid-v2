@@ -1,4 +1,4 @@
-import { Unary } from "../core/model";
+import { Unary } from "../core/model.js";
 
 export class Integral extends Unary {
   private sum = 0;
