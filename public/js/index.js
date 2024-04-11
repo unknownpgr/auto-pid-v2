@@ -81,6 +81,51 @@ const specs = [
             return [input[0] - input[1]];
         },
     }),
+    // Multiply
+    op({
+        name: "Multiply",
+        inputs: 2,
+        outputs: 1,
+        parameter: {},
+        initialState: null,
+        transfer: ({ input }) => {
+            return [input[0] * input[1]];
+        },
+    }),
+    // Value 1
+    op({
+        name: "Value 1",
+        inputs: 0,
+        outputs: 1,
+        parameter: {
+            value: {
+                displayName: "Value",
+                description: "Value of the output",
+                defaultValue: 1,
+            },
+        },
+        initialState: null,
+        transfer: ({ parameter }) => {
+            return [parameter.value];
+        },
+    }),
+    // Value 2
+    op({
+        name: "Value 2",
+        inputs: 0,
+        outputs: 1,
+        parameter: {
+            value: {
+                displayName: "Value",
+                description: "Value of the output",
+                defaultValue: 2,
+            },
+        },
+        initialState: null,
+        transfer: ({ parameter }) => {
+            return [parameter.value];
+        },
+    }),
 ];
 const init = () => {
     const operationsDiv = document.getElementById("operations");
