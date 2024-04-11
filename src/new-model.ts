@@ -78,34 +78,51 @@ type ArrayOf = {
   10: Array10;
 };
 
-type FunctionKNM<K extends NumberN, N extends NumberN, M extends NumberN> = ({
-  state,
-  input,
-}: {
-  state: ArrayOf[K];
-  input: ArrayOf[N];
-}) => ArrayOf[M];
-
 function clone<T>(a: T): T {
   return JSON.parse(JSON.stringify(a));
 }
 
-export class OperationSpec<
-  NumState extends NumberN = NumberN,
-  NumInput extends NumberN = NumberN,
-  NumOutput extends NumberN = NumberN
+type Transfer<S, P, N extends NumberN, M extends NumberN> = (p: {
+  dt: number;
+  state: S;
+  parameter: P;
+  input: ArrayOf[N];
+}) => ArrayOf[M];
+
+type ParameterSpec<V extends number | string = number> = {
+  [key: string]: {
+    displayName: string;
+    description: string;
+    defaultValue: V;
+  };
+};
+
+type Parameter<P extends ParameterSpec> = {
+  [K in keyof P]: P[K]["defaultValue"];
+};
+
+export interface OperationSpec<
+  S,
+  P extends ParameterSpec,
+  N extends NumberN,
+  M extends NumberN
 > {
-  constructor(
-    public readonly dict: {
-      name: string;
-      states: NumState;
-      inputs: NumInput;
-      outputs: NumOutput;
-      initialState: ArrayOf[NumState];
-      transfer: FunctionKNM<NumState, NumInput, NumOutput>;
-    }
-  ) {}
+  name: string;
+  inputs: N;
+  outputs: M;
+  initialState: S;
+  parameter: P;
+  transfer: Transfer<S, Parameter<P>, N, M>;
 }
+
+export const op = <
+  S = void,
+  P extends ParameterSpec<any> = {},
+  N extends NumberN = NumberN,
+  M extends NumberN = NumberN
+>(
+  spec: OperationSpec<S, P, N, M>
+) => spec;
 
 type PortType = "input" | "output";
 
@@ -120,34 +137,84 @@ interface Connection {
   to: Port;
 }
 
+interface ParameterDescription {
+  key: string;
+  displayName: string;
+  description: string;
+  type: "number" | "string";
+}
+
 class Operation<
-  NumState extends NumberN = NumberN,
-  NumInput extends NumberN = NumberN,
-  NumOutput extends NumberN = NumberN
+  S,
+  P extends ParameterSpec,
+  N extends NumberN = NumberN,
+  M extends NumberN = NumberN
 > {
-  private state: ArrayOf[NumState];
+  public name: string = "";
+  private _transfer: Transfer<S, Parameter<P>, N, M> = {} as any;
+  private parameters: Parameter<P> = {} as any;
+  private parameterDescriptions: ParameterDescription[] = [];
   public inputPorts: Port[] = [];
   public outputPorts: Port[] = [];
+  public dt = 0.01;
+  private state: S = {} as any;
 
-  constructor(
-    public readonly id: number,
-    public readonly spec: OperationSpec<NumState, NumInput, NumOutput>
-  ) {
-    this.state = this.spec.dict.initialState;
-    for (let i = 0; i < this.spec.dict.inputs; i++) {
+  constructor(public readonly id: number, spec: OperationSpec<S, P, N, M>) {
+    this.init(spec);
+  }
+
+  public init(spec: OperationSpec<S, P, N, M>) {
+    this.name = spec.name;
+    this._transfer = spec.transfer;
+    this.state = clone(spec.initialState);
+
+    // Register parameters and parameter descriptions
+    for (const key in spec.parameter) {
+      const parameter = spec.parameter[key];
+      this.parameters[key] = parameter.defaultValue;
+      const valueType = typeof parameter.defaultValue;
+      if (valueType !== "number" && valueType !== "string") {
+        throw new Error("Invalid parameter type");
+      }
+      this.parameterDescriptions.push({
+        key,
+        displayName: parameter.displayName,
+        description: parameter.description,
+        type: valueType,
+      });
+    }
+
+    // Register input and output ports
+    for (let i = 0; i < spec.inputs; i++) {
       this.inputPorts.push({ type: "input", operationId: this.id, index: i });
     }
-    for (let i = 0; i < this.spec.dict.outputs; i++) {
+    for (let i = 0; i < spec.outputs; i++) {
       this.outputPorts.push({ type: "output", operationId: this.id, index: i });
     }
   }
 
-  public init() {
-    this.state = clone(this.spec.dict.initialState);
+  public transfer(input: ArrayOf[N]): ArrayOf[M] {
+    return this._transfer({
+      dt: this.dt,
+      state: this.state,
+      parameter: this.parameters,
+      input,
+    });
   }
 
-  public transfer(input: ArrayOf[NumInput]): ArrayOf[NumOutput] {
-    return this.spec.dict.transfer({ state: this.state, input });
+  public getParameterDescriptions() {
+    return this.parameterDescriptions;
+  }
+
+  public setParameter(key: string, value: number | string) {
+    const description = this.parameterDescriptions.find(
+      (description) => description.key === key
+    );
+    if (!description) throw new Error(`Parameter not found: ${key}`);
+    if (description.type !== typeof value) {
+      throw new Error(`Invalid parameter type: ${key}`);
+    }
+    (this.parameters as any)[key] = value;
   }
 }
 
@@ -160,11 +227,11 @@ export interface OperationDTO {
 
 export class System {
   private counter = 0;
-  private operations: Map<number, Operation> = new Map();
+  private operations: Map<number, Operation<any, any>> = new Map();
   private outputBuffer: Map<number, ArrayOf[NumberN]> = new Map();
   private connection: Connection[] = [];
 
-  public addOperation(spec: OperationSpec<any, any, any>): number {
+  public addOperation(spec: OperationSpec<any, any, any, any>): number {
     const id = this.counter++;
     const operation = new Operation(id, spec);
     this.operations.set(id, operation);
@@ -173,6 +240,11 @@ export class System {
 
   public removeOperation(id: number) {
     this.operations.delete(id);
+    this.outputBuffer.delete(id);
+    this.connection = this.connection.filter(
+      (connection) =>
+        connection.from.operationId !== id && connection.to.operationId !== id
+    );
   }
 
   private isPortEqual(port1: Port, port2: Port) {
@@ -188,7 +260,7 @@ export class System {
     if (!operation) throw new Error(`Operation not found: ${id}`);
     return {
       id: operation.id,
-      name: operation.spec.dict.name,
+      name: operation.name,
       inputPorts: operation.inputPorts,
       outputPorts: operation.outputPorts,
     };
@@ -197,7 +269,7 @@ export class System {
   public getOperations(): OperationDTO[] {
     return Array.from(this.operations.values()).map((operation) => ({
       id: operation.id,
-      name: operation.spec.dict.name,
+      name: operation.name,
       inputPorts: operation.inputPorts,
       outputPorts: operation.outputPorts,
     }));

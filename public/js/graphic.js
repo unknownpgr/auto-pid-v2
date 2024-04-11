@@ -77,10 +77,8 @@ export class GraphicSystem extends System {
         this.mouseX = x;
         this.mouseY = y;
         const op = this.getSelectedOperation();
-        if (op) {
+        if (op)
             this.setOperationPosition(op.id, x, y);
-            console.log(op, this.getOperationRect(op.id));
-        }
     }
     getNearObject() {
         let minDist = this.nearThresh;

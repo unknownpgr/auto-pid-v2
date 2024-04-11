@@ -1,57 +1,61 @@
 // Implementation layer
 
 import { GraphicSystem, Rect } from "./graphic.js";
-import { OperationSpec } from "./new-model.js";
+import { op } from "./new-model.js";
 
 const specs = [
   //Input
-  new OperationSpec({
-    name: "Input",
-    states: 1,
+  op({
+    name: "Sine",
     inputs: 0,
     outputs: 1,
-    initialState: [0],
-    transfer: ({ state, input }) => [state[0]],
+    parameter: {
+      amplitude: {
+        displayName: "Amplitude",
+        description: "Amplitude of the sine wave",
+        defaultValue: 1,
+      },
+      frequency: {
+        displayName: "Frequency",
+        description: "Frequency of the sine wave",
+        defaultValue: 1,
+      },
+    },
+    initialState: {
+      time: 0,
+    },
+    transfer: ({ parameter, state, dt }) => {
+      const { amplitude, frequency } = parameter;
+      const { time } = state;
+      state.time += dt;
+      const value = amplitude * Math.sin(2 * Math.PI * frequency * time);
+      return [value];
+    },
   }),
 
-  //Output
-  new OperationSpec({
+  // Output
+  op({
     name: "Output",
-    states: 0,
     inputs: 1,
     outputs: 0,
-    initialState: [],
-    transfer: ({ state, input }) => [],
+    parameter: {},
+    initialState: [] as number[],
+    transfer: ({ state, input }) => {
+      state.push(input[0]);
+      return [];
+    },
   }),
 
   // Add
-  new OperationSpec({
+  op({
     name: "Add",
-    states: 0,
     inputs: 2,
     outputs: 1,
-    initialState: [],
-    transfer: ({ state, input }) => [input[0] + input[1]],
-  }),
-
-  // Sub
-  new OperationSpec({
-    name: "Sub",
-    states: 0,
-    inputs: 2,
-    outputs: 1,
-    initialState: [],
-    transfer: ({ state, input }) => [input[0] - input[1]],
-  }),
-
-  // Delay
-  new OperationSpec({
-    name: "Delay",
-    states: 1,
-    inputs: 1,
-    outputs: 1,
-    initialState: [0],
-    transfer: ({ state, input }) => [state[0]],
+    parameter: {},
+    initialState: null,
+    transfer: ({ input }) => {
+      return [input[0] + input[1]];
+    },
   }),
 ];
 
@@ -60,7 +64,7 @@ const init = () => {
   if (!operationsDiv) return;
   for (const spec of specs) {
     const button = document.createElement("button");
-    button.textContent = spec.dict.name;
+    button.textContent = spec.name;
     button.addEventListener("click", () => graphic.addOperation(spec));
     operationsDiv.appendChild(button as unknown as Node);
   }

@@ -23,7 +23,7 @@ export class GraphicSystem extends System {
   private mouseY = 0;
   private selectedObject: OperationDTO | Port | null = null;
 
-  public addOperation(spec: OperationSpec<any, any, any>): number {
+  public addOperation(spec: OperationSpec<any, any, any, any>): number {
     const id = super.addOperation(spec);
     this.selectedObject = this.getOperation(id);
     return id;
@@ -97,10 +97,7 @@ export class GraphicSystem extends System {
     this.mouseX = x;
     this.mouseY = y;
     const op = this.getSelectedOperation();
-    if (op) {
-      this.setOperationPosition(op.id, x, y);
-      console.log(op, this.getOperationRect(op.id));
-    }
+    if (op) this.setOperationPosition(op.id, x, y);
   }
 
   public getNearObject(): OperationDTO | Port | null {

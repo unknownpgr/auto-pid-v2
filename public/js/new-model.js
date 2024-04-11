@@ -1,30 +1,66 @@
 function clone(a) {
     return JSON.parse(JSON.stringify(a));
 }
-export class OperationSpec {
-    constructor(dict) {
-        this.dict = dict;
-    }
-}
+export const op = (spec) => spec;
 class Operation {
     constructor(id, spec) {
         this.id = id;
-        this.spec = spec;
+        this.name = "";
+        this._transfer = {};
+        this.parameters = {};
+        this.parameterDescriptions = [];
         this.inputPorts = [];
         this.outputPorts = [];
-        this.state = this.spec.dict.initialState;
-        for (let i = 0; i < this.spec.dict.inputs; i++) {
+        this.dt = 0.01;
+        this.state = {};
+        this.init(spec);
+    }
+    init(spec) {
+        this.name = spec.name;
+        this._transfer = spec.transfer;
+        this.state = clone(spec.initialState);
+        // Register parameters and parameter descriptions
+        for (const key in spec.parameter) {
+            const parameter = spec.parameter[key];
+            this.parameters[key] = parameter.defaultValue;
+            const valueType = typeof parameter.defaultValue;
+            if (valueType !== "number" && valueType !== "string") {
+                throw new Error("Invalid parameter type");
+            }
+            this.parameterDescriptions.push({
+                key,
+                displayName: parameter.displayName,
+                description: parameter.description,
+                type: valueType,
+            });
+        }
+        // Register input and output ports
+        for (let i = 0; i < spec.inputs; i++) {
             this.inputPorts.push({ type: "input", operationId: this.id, index: i });
         }
-        for (let i = 0; i < this.spec.dict.outputs; i++) {
+        for (let i = 0; i < spec.outputs; i++) {
             this.outputPorts.push({ type: "output", operationId: this.id, index: i });
         }
     }
-    init() {
-        this.state = clone(this.spec.dict.initialState);
-    }
     transfer(input) {
-        return this.spec.dict.transfer({ state: this.state, input });
+        return this._transfer({
+            dt: this.dt,
+            state: this.state,
+            parameter: this.parameters,
+            input,
+        });
+    }
+    getParameterDescriptions() {
+        return this.parameterDescriptions;
+    }
+    setParameter(key, value) {
+        const description = this.parameterDescriptions.find((description) => description.key === key);
+        if (!description)
+            throw new Error(`Parameter not found: ${key}`);
+        if (description.type !== typeof value) {
+            throw new Error(`Invalid parameter type: ${key}`);
+        }
+        this.parameters[key] = value;
     }
 }
 export class System {
@@ -42,6 +78,8 @@ export class System {
     }
     removeOperation(id) {
         this.operations.delete(id);
+        this.outputBuffer.delete(id);
+        this.connection = this.connection.filter((connection) => connection.from.operationId !== id && connection.to.operationId !== id);
     }
     isPortEqual(port1, port2) {
         return (port1.operationId === port2.operationId &&
@@ -54,7 +92,7 @@ export class System {
             throw new Error(`Operation not found: ${id}`);
         return {
             id: operation.id,
-            name: operation.spec.dict.name,
+            name: operation.name,
             inputPorts: operation.inputPorts,
             outputPorts: operation.outputPorts,
         };
@@ -62,7 +100,7 @@ export class System {
     getOperations() {
         return Array.from(this.operations.values()).map((operation) => ({
             id: operation.id,
-            name: operation.spec.dict.name,
+            name: operation.name,
             inputPorts: operation.inputPorts,
             outputPorts: operation.outputPorts,
         }));
