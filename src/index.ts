@@ -318,12 +318,13 @@ const render = () => {
     min -= diff * 0.1;
     max += diff * 0.1;
 
+    const y0 = ((0 - min) / (max - min)) * graphCnv.height;
     graphCtx.clearRect(0, 0, graphCnv.width, graphCnv.height);
     graphCtx.lineWidth = 1;
     graphCtx.strokeStyle = "black";
     graphCtx.beginPath();
-    graphCtx.moveTo(0, graphCnv.height / 2);
-    graphCtx.lineTo(graphCnv.width, graphCnv.height / 2);
+    graphCtx.moveTo(0, graphCnv.height - y0);
+    graphCtx.lineTo(graphCnv.width, graphCnv.height - y0);
     graphCtx.stroke();
 
     for (const output of outputs) {
