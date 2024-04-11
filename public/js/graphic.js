@@ -84,8 +84,7 @@ export class GraphicSystem extends System {
         let minDist = this.nearThresh;
         let nearObject = null;
         for (const operation of this.getOperations()) {
-            const ports = [...operation.inputPorts, ...operation.outputPorts];
-            for (const port of ports) {
+            for (const port of operation.ports) {
                 const pos = this.getPortPosition(port);
                 const dist = Math.hypot(pos.x - this.mouseX, pos.y - this.mouseY);
                 if (dist < minDist) {

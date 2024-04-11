@@ -22,60 +22,30 @@ type NumberN =
   | Number9
   | Number10;
 
-type Array0 = readonly [];
-type Array1 = readonly [number];
-type Array2 = readonly [number, number];
-type Array3 = readonly [number, number, number];
-type Array4 = readonly [number, number, number, number];
-type Array5 = readonly [number, number, number, number, number];
-type Array6 = readonly [number, number, number, number, number, number];
-type Array7 = readonly [number, number, number, number, number, number, number];
-type Array8 = readonly [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number
-];
-type Array9 = readonly [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number
-];
-type Array10 = readonly [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number
-];
+type Array0<T = number> = readonly [];
+type Array1<T = number> = readonly [T];
+type Array2<T = number> = readonly [T, T];
+type Array3<T = number> = readonly [T, T, T];
+type Array4<T = number> = readonly [T, T, T, T];
+type Array5<T = number> = readonly [T, T, T, T, T];
+type Array6<T = number> = readonly [T, T, T, T, T, T];
+type Array7<T = number> = readonly [T, T, T, T, T, T, T];
+type Array8<T = number> = readonly [T, T, T, T, T, T, T, T];
+type Array9<T = number> = readonly [T, T, T, T, T, T, T, T, T];
+type Array10<T = number> = readonly [T, T, T, T, T, T, T, T, T, T];
 
-type ArrayOf = {
-  0: Array0;
-  1: Array1;
-  2: Array2;
-  3: Array3;
-  4: Array4;
-  5: Array5;
-  6: Array6;
-  7: Array7;
-  8: Array8;
-  9: Array9;
-  10: Array10;
+type ArrayOf<T = number> = {
+  0: Array0<T>;
+  1: Array1<T>;
+  2: Array2<T>;
+  3: Array3<T>;
+  4: Array4<T>;
+  5: Array5<T>;
+  6: Array6<T>;
+  7: Array7<T>;
+  8: Array8<T>;
+  9: Array9<T>;
+  10: Array10<T>;
 };
 
 function clone<T>(a: T): T {
@@ -128,6 +98,7 @@ type PortType = "input" | "output";
 
 export interface Port {
   type: PortType;
+  id: number;
   operationId: number;
   index: number;
 }
@@ -152,25 +123,34 @@ class Operation<
 > {
   public name: string = "";
   private _transfer: Transfer<S, Parameter<P>, N, M> = {} as any;
+  private state: S = {} as any;
   private parameters: Parameter<P> = {} as any;
   private parameterDescriptions: ParameterDescription[] = [];
   public inputPorts: Port[] = [];
   public outputPorts: Port[] = [];
   public dt = 0.01;
-  private state: S = {} as any;
 
-  constructor(public readonly id: number, spec: OperationSpec<S, P, N, M>) {
-    this.init(spec);
+  constructor(
+    public readonly id: number,
+    private readonly spec: OperationSpec<S, P, N, M>
+  ) {
+    this.init();
   }
 
-  public init(spec: OperationSpec<S, P, N, M>) {
-    this.name = spec.name;
-    this._transfer = spec.transfer;
-    this.state = clone(spec.initialState);
+  public get ports() {
+    return [...this.inputPorts, ...this.outputPorts];
+  }
+
+  public init() {
+    this.name = this.spec.name;
+    this._transfer = this.spec.transfer;
+    this.state = clone(this.spec.initialState);
 
     // Register parameters and parameter descriptions
-    for (const key in spec.parameter) {
-      const parameter = spec.parameter[key];
+    this.parameters = {} as any;
+    this.parameterDescriptions = [];
+    for (const key in this.spec.parameter) {
+      const parameter = this.spec.parameter[key];
       this.parameters[key] = parameter.defaultValue;
       const valueType = typeof parameter.defaultValue;
       if (valueType !== "number" && valueType !== "string") {
@@ -185,11 +165,25 @@ class Operation<
     }
 
     // Register input and output ports
-    for (let i = 0; i < spec.inputs; i++) {
-      this.inputPorts.push({ type: "input", operationId: this.id, index: i });
+    this.inputPorts = [];
+    this.outputPorts = [];
+    for (let i = 0; i < this.spec.inputs; i++) {
+      const portId = this.id * 2 ** (i * 2);
+      this.inputPorts.push({
+        id: portId,
+        type: "input",
+        operationId: this.id,
+        index: i,
+      });
     }
-    for (let i = 0; i < spec.outputs; i++) {
-      this.outputPorts.push({ type: "output", operationId: this.id, index: i });
+    for (let i = 0; i < this.spec.outputs; i++) {
+      const portId = this.id * 2 ** (i * 2 + 1);
+      this.outputPorts.push({
+        id: portId,
+        type: "output",
+        operationId: this.id,
+        index: i,
+      });
     }
   }
 
@@ -223,35 +217,36 @@ export interface OperationDTO {
   name: string;
   inputPorts: Port[];
   outputPorts: Port[];
+  ports: Port[];
 }
 
 export class System {
-  private counter = 0;
+  private epsilon = 1e-6;
+  private counter = 1;
   private operations: Map<number, Operation<any, any>> = new Map();
-  private outputBuffer: Map<number, ArrayOf[NumberN]> = new Map();
   private connection: Connection[] = [];
+  private portMapping: { [inputPortId: number]: number } = {}; // Input port ID -> Output port ID that it is connected to
+  private outputBuffer: { [outputPortId: number]: number } = {}; // Output port ID -> Buffer
+  private isInitialized = false;
 
   public addOperation(spec: OperationSpec<any, any, any, any>): number {
-    const id = this.counter++;
+    this.isInitialized = false;
+    const id = this.counter;
+    this.counter += 2;
     const operation = new Operation(id, spec);
     this.operations.set(id, operation);
     return id;
   }
 
   public removeOperation(id: number) {
+    this.isInitialized = false;
+    this.getOperation(id).outputPorts.forEach((port) => {
+      delete this.outputBuffer[port.id];
+    });
     this.operations.delete(id);
-    this.outputBuffer.delete(id);
     this.connection = this.connection.filter(
       (connection) =>
         connection.from.operationId !== id && connection.to.operationId !== id
-    );
-  }
-
-  private isPortEqual(port1: Port, port2: Port) {
-    return (
-      port1.operationId === port2.operationId &&
-      port1.index === port2.index &&
-      port1.type === port2.type
     );
   }
 
@@ -263,6 +258,7 @@ export class System {
       name: operation.name,
       inputPorts: operation.inputPorts,
       outputPorts: operation.outputPorts,
+      ports: operation.ports,
     };
   }
 
@@ -272,6 +268,7 @@ export class System {
       name: operation.name,
       inputPorts: operation.inputPorts,
       outputPorts: operation.outputPorts,
+      ports: operation.ports,
     }));
   }
 
@@ -281,26 +278,92 @@ export class System {
 
     // If input port is already connected to another output port, it is not connectable.
     for (const connection of this.connection) {
-      if (this.isPortEqual(connection.to, port2)) return false;
+      if (connection.to.id === port2.id) return false;
     }
 
     return true;
   }
 
   public connect(port1: Port, port2: Port) {
+    this.isInitialized = false;
     if (!this.isConnectable(port1, port2)) return;
     if (port1.type === "input") [port1, port2] = [port2, port1];
     this.connection.push({ from: port1, to: port2 });
   }
 
   public disconnect(to: Port) {
+    this.isInitialized = false;
     if (to.type === "output") return;
     this.connection = this.connection.filter(
-      (connection) => !this.isPortEqual(connection.to, to)
+      (connection) => connection.to.id !== to.id
     );
   }
 
   public getConnections(): Connection[] {
     return this.connection;
+  }
+
+  public setDt(dt: number) {
+    this.operations.forEach((operation) => (operation.dt = dt));
+  }
+
+  public setParameter(id: number, key: string, value: number | string) {
+    const operation = this.operations.get(id);
+    if (!operation) throw new Error(`Operation not found: ${id}`);
+    operation.setParameter(key, value);
+  }
+
+  public getParameterDescriptions(id: number) {
+    const operation = this.operations.get(id);
+    if (!operation) throw new Error(`Operation not found: ${id}`);
+    return operation.getParameterDescriptions();
+  }
+
+  public isComplete() {
+    const hashPort = (port: Port) =>
+      `${port.operationId}-${port.type}-${port.index}`;
+    const connectedPorts = new Set<string>();
+    this.connection.forEach((connection) => {
+      connectedPorts.add(hashPort(connection.from));
+      connectedPorts.add(hashPort(connection.to));
+    });
+    for (const operation of this.operations.values()) {
+      for (const port of operation.ports) {
+        if (!connectedPorts.has(hashPort(port))) return false;
+      }
+    }
+    return true;
+  }
+
+  public init() {
+    if (!this.isComplete()) {
+      throw new Error("System is not complete");
+    }
+    this.operations.forEach((operation) => {
+      operation.init();
+      operation.outputPorts.forEach((port) => {
+        this.outputBuffer[port.id] = this.epsilon;
+      });
+    });
+    this.connection.forEach(({ from, to }) => {
+      this.portMapping[to.id] = from.id;
+    });
+    this.isInitialized = true;
+  }
+
+  public update() {
+    if (!this.isInitialized) throw new Error("System is not initialized");
+    this.operations.forEach((operation) => {
+      const input: number[] = [];
+      operation.inputPorts.forEach((port) => {
+        const outputPortId = this.portMapping[port.id];
+        const outputBuffer = this.outputBuffer[outputPortId];
+        input.push(outputBuffer);
+      });
+      const output = operation.transfer(input as any);
+      operation.outputPorts.forEach((port, i) => {
+        this.outputBuffer[port.id] = output[i];
+      });
+    });
   }
 }

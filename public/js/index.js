@@ -37,8 +37,8 @@ const specs = [
         outputs: 0,
         parameter: {},
         initialState: [],
-        transfer: ({ state, input }) => {
-            state.push(input[0]);
+        transfer: ({ input }) => {
+            console.log(input);
             return [];
         },
     }),
@@ -123,6 +123,7 @@ const dot = (x, y) => {
     ctx.arc(x * scale, y * scale, 5, 0, Math.PI * 2);
     ctx.fill();
 };
+let previousInit = false;
 const render = () => {
     ctx.clearRect(0, 0, cnv.width, cnv.height);
     ctx.font = `${12 * scale}px Arial`;
@@ -135,8 +136,7 @@ const render = () => {
         const rect = graphic.getOperationRect(op.id);
         drawRect(rect);
         ctx.fillText(op.name, (rect.x + 5) * scale, (rect.y + 15) * scale);
-        const ports = [...op.inputPorts, ...op.outputPorts];
-        for (const port of ports) {
+        for (const port of op.ports) {
             if (selectedPort && !graphic.isConnectable(selectedPort, port))
                 continue;
             const pos = graphic.getPortPosition(port);
@@ -176,6 +176,18 @@ const render = () => {
             ctx.lineTo(point.x * scale, point.y * scale);
         }
         ctx.stroke();
+    }
+    if (graphic.isComplete()) {
+        if (!previousInit) {
+            graphic.setDt(0.01);
+            graphic.init();
+            previousInit = true;
+        }
+        graphic.update();
+        ctx.fillText("Complete", 300, 40);
+    }
+    else {
+        previousInit = false;
     }
 };
 const loop = () => {
