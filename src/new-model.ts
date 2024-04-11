@@ -115,17 +115,17 @@ interface ParameterDescription {
   type: "number" | "string";
 }
 
-class Operation<
-  S,
-  P extends ParameterSpec,
+export class Operation<
+  S = any,
+  P extends ParameterSpec = {},
   N extends NumberN = NumberN,
   M extends NumberN = NumberN
 > {
   public name: string = "";
   private _transfer: Transfer<S, Parameter<P>, N, M> = {} as any;
-  private state: S = {} as any;
   private parameters: Parameter<P> = {} as any;
   private parameterDescriptions: ParameterDescription[] = [];
+  public state: S = {} as any;
   public inputPorts: Port[] = [];
   public outputPorts: Port[] = [];
   public dt = 0.01;
@@ -210,20 +210,16 @@ class Operation<
     }
     (this.parameters as any)[key] = value;
   }
-}
 
-export interface OperationDTO {
-  id: number;
-  name: string;
-  inputPorts: Port[];
-  outputPorts: Port[];
-  ports: Port[];
+  public getParameter(key: string) {
+    return (this.parameters as any)[key];
+  }
 }
 
 export class System {
   private epsilon = 1e-6;
   private counter = 1;
-  private operations: Map<number, Operation<any, any>> = new Map();
+  private operations: Map<number, Operation> = new Map();
   private connection: Connection[] = [];
   private portMapping: { [inputPortId: number]: number } = {}; // Input port ID -> Output port ID that it is connected to
   private outputBuffer: { [outputPortId: number]: number } = {}; // Output port ID -> Buffer
@@ -250,26 +246,14 @@ export class System {
     );
   }
 
-  public getOperation(id: number): OperationDTO {
+  public getOperation(id: number): Operation {
     const operation = this.operations.get(id);
     if (!operation) throw new Error(`Operation not found: ${id}`);
-    return {
-      id: operation.id,
-      name: operation.name,
-      inputPorts: operation.inputPorts,
-      outputPorts: operation.outputPorts,
-      ports: operation.ports,
-    };
+    return operation;
   }
 
-  public getOperations(): OperationDTO[] {
-    return Array.from(this.operations.values()).map((operation) => ({
-      id: operation.id,
-      name: operation.name,
-      inputPorts: operation.inputPorts,
-      outputPorts: operation.outputPorts,
-      ports: operation.ports,
-    }));
+  public getOperations(): Operation[] {
+    return Array.from(this.operations.values());
   }
 
   public isConnectable(port1: Port, port2: Port) {

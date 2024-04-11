@@ -2,15 +2,15 @@ function clone(a) {
     return JSON.parse(JSON.stringify(a));
 }
 export const op = (spec) => spec;
-class Operation {
+export class Operation {
     constructor(id, spec) {
         this.id = id;
         this.spec = spec;
         this.name = "";
         this._transfer = {};
-        this.state = {};
         this.parameters = {};
         this.parameterDescriptions = [];
+        this.state = {};
         this.inputPorts = [];
         this.outputPorts = [];
         this.dt = 0.01;
@@ -82,6 +82,9 @@ class Operation {
         }
         this.parameters[key] = value;
     }
+    getParameter(key) {
+        return this.parameters[key];
+    }
 }
 export class System {
     constructor() {
@@ -113,22 +116,10 @@ export class System {
         const operation = this.operations.get(id);
         if (!operation)
             throw new Error(`Operation not found: ${id}`);
-        return {
-            id: operation.id,
-            name: operation.name,
-            inputPorts: operation.inputPorts,
-            outputPorts: operation.outputPorts,
-            ports: operation.ports,
-        };
+        return operation;
     }
     getOperations() {
-        return Array.from(this.operations.values()).map((operation) => ({
-            id: operation.id,
-            name: operation.name,
-            inputPorts: operation.inputPorts,
-            outputPorts: operation.outputPorts,
-            ports: operation.ports,
-        }));
+        return Array.from(this.operations.values());
     }
     isConnectable(port1, port2) {
         if (port1.type === port2.type)

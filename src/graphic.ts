@@ -1,4 +1,4 @@
-import { OperationDTO, OperationSpec, Port, System } from "./new-model.js";
+import { Operation, OperationSpec, Port, System } from "./new-model.js";
 
 export interface Vector {
   x: number;
@@ -21,7 +21,7 @@ export class GraphicSystem extends System {
 
   private mouseX = 0;
   private mouseY = 0;
-  private selectedObject: OperationDTO | Port | null = null;
+  private selectedObject: Operation | Port | null = null;
 
   public addOperation(spec: OperationSpec<any, any, any, any>): number {
     const id = super.addOperation(spec);
@@ -83,7 +83,7 @@ export class GraphicSystem extends System {
       : -1;
   }
 
-  private isOperation(operation: any): operation is OperationDTO {
+  private isOperation(operation: any): operation is Operation {
     if (!operation) return false;
     return operation.inputPorts !== undefined;
   }
@@ -100,9 +100,9 @@ export class GraphicSystem extends System {
     if (op) this.setOperationPosition(op.id, x, y);
   }
 
-  public getNearObject(): OperationDTO | Port | null {
+  public getNearObject(): Operation | Port | null {
     let minDist = this.nearThresh;
-    let nearObject: OperationDTO | Port | null = null;
+    let nearObject: Operation | Port | null = null;
     for (const operation of this.getOperations()) {
       for (const port of operation.ports) {
         const pos = this.getPortPosition(port);

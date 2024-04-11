@@ -3,6 +3,8 @@
 import { GraphicSystem, Rect } from "./graphic.js";
 import { op } from "./new-model.js";
 
+let index = 0;
+
 const specs = [
   //Input
   op({
@@ -38,10 +40,26 @@ const specs = [
     name: "Output",
     inputs: 1,
     outputs: 0,
-    parameter: {},
-    initialState: [] as number[],
-    transfer: ({ input }) => {
-      console.log(input);
+    parameter: {
+      name: {
+        displayName: "Name",
+        description: "Name of the output",
+        defaultValue: "output " + index++,
+      },
+      bufferLength: {
+        displayName: "Buffer Length",
+        description: "Length of the buffer",
+        defaultValue: 100,
+      },
+    },
+    initialState: {
+      index: 0,
+      buffer: new Array<number>(100).fill(0),
+    },
+    transfer: ({ state, input }) => {
+      const { buffer, index } = state;
+      buffer[index] = input[0];
+      state.index = (index + 1) % buffer.length;
       return [];
     },
   }),
@@ -55,6 +73,18 @@ const specs = [
     initialState: null,
     transfer: ({ input }) => {
       return [input[0] + input[1]];
+    },
+  }),
+
+  // Sub
+  op({
+    name: "Sub",
+    inputs: 2,
+    outputs: 1,
+    parameter: {},
+    initialState: null,
+    transfer: ({ input }) => {
+      return [input[0] - input[1]];
     },
   }),
 ];
@@ -83,6 +113,11 @@ if (!cnv) throw Error("Canvas not found");
 const ctx = cnv.getContext("2d");
 if (!ctx) throw Error("Context not found");
 const scale = 2;
+
+const graphCnv = document.getElementById("graph") as HTMLCanvasElement;
+if (!graphCnv) throw Error("Canvas not found");
+const graphCtx = graphCnv.getContext("2d");
+if (!graphCtx) throw Error("Context not found");
 
 const getCubicCurveFunction = (
   x1: number,
@@ -216,7 +251,46 @@ const render = () => {
       previousInit = true;
     }
     graphic.update();
-    ctx.fillText("Complete", 300, 40);
+
+    // Draw graph
+    const outputs = graphic
+      .getOperations()
+      .filter((op) => op.name === "Output")
+      .map((op) => {
+        const shiftedBuffer = []
+          .concat(op.state.buffer.slice(op.state.index))
+          .concat(op.state.buffer.slice(0, op.state.index));
+        return {
+          name: op.getParameter("name"),
+          buffer: shiftedBuffer,
+        };
+      });
+
+    let min = Math.min(...outputs.map((output) => Math.min(...output.buffer)));
+    let max = Math.max(...outputs.map((output) => Math.max(...output.buffer)));
+    const diff = max - min;
+    min -= diff * 0.1;
+    max += diff * 0.1;
+
+    graphCtx.clearRect(0, 0, graphCnv.width, graphCnv.height);
+    graphCtx.lineWidth = 1;
+    graphCtx.strokeStyle = "black";
+    graphCtx.beginPath();
+    graphCtx.moveTo(0, graphCnv.height / 2);
+    graphCtx.lineTo(graphCnv.width, graphCnv.height / 2);
+    graphCtx.stroke();
+
+    for (const output of outputs) {
+      const buffer = output.buffer;
+      graphCtx.strokeStyle = "blue";
+      graphCtx.beginPath();
+      for (let i = 0; i < buffer.length; i++) {
+        const x = (i / buffer.length) * graphCnv.width;
+        const y = ((buffer[i] - min) / (max - min)) * graphCnv.height;
+        graphCtx.lineTo(x, graphCnv.height - y);
+      }
+      graphCtx.stroke();
+    }
   } else {
     previousInit = false;
   }
@@ -228,8 +302,11 @@ const loop = () => {
 };
 
 const resizeCanvas = () => {
-  cnv.width = window.innerWidth * scale;
-  cnv.height = window.innerHeight * scale;
+  cnv.width = cnv.clientWidth * scale;
+  cnv.height = cnv.clientHeight * scale;
+
+  graphCnv.width = graphCnv.clientWidth * scale;
+  graphCnv.height = graphCnv.clientHeight * scale;
 };
 
 cnv.addEventListener("mousemove", (e) => {

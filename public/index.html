@@ -18,9 +18,17 @@
         position: relative;
       }
 
-      #cnv {
+      #col {
         width: 100%;
         height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #col canvas {
+        width: 100%;
+        height: 0;
+        flex-grow: 1;
       }
 
       #operations {
@@ -39,7 +47,10 @@
     <title>Document</title>
   </head>
   <body>
-    <canvas id="cnv"></canvas>
+    <div id="col">
+      <canvas id="cnv"></canvas>
+      <canvas id="graph"></canvas>
+    </div>
     <div id="operations"></div>
   </body>
   <script src="./js/index.js?v=0" type="module"></script>
