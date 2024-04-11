@@ -223,10 +223,10 @@ export class System {
   private connection: Connection[] = [];
   private portMapping: { [inputPortId: number]: number } = {}; // Input port ID -> Output port ID that it is connected to
   private outputBuffer: { [outputPortId: number]: number } = {}; // Output port ID -> Buffer
-  private isInitialized = false;
+  private _isInitialized = false;
 
   public addOperation(spec: OperationSpec<any, any, any, any>): number {
-    this.isInitialized = false;
+    this._isInitialized = false;
     const id = this.counter;
     this.counter += 2;
     const operation = new Operation(id, spec);
@@ -235,7 +235,7 @@ export class System {
   }
 
   public removeOperation(id: number) {
-    this.isInitialized = false;
+    this._isInitialized = false;
     this.getOperation(id).outputPorts.forEach((port) => {
       delete this.outputBuffer[port.id];
     });
@@ -269,14 +269,14 @@ export class System {
   }
 
   public connect(port1: Port, port2: Port) {
-    this.isInitialized = false;
+    this._isInitialized = false;
     if (!this.isConnectable(port1, port2)) return;
     if (port1.type === "input") [port1, port2] = [port2, port1];
     this.connection.push({ from: port1, to: port2 });
   }
 
   public disconnect(to: Port) {
-    this.isInitialized = false;
+    this._isInitialized = false;
     if (to.type === "output") return;
     this.connection = this.connection.filter(
       (connection) => connection.to.id !== to.id
@@ -332,11 +332,15 @@ export class System {
     this.connection.forEach(({ from, to }) => {
       this.portMapping[to.id] = from.id;
     });
-    this.isInitialized = true;
+    this._isInitialized = true;
+  }
+
+  public isInitialized() {
+    return this._isInitialized;
   }
 
   public update() {
-    if (!this.isInitialized) throw new Error("System is not initialized");
+    if (!this._isInitialized) throw new Error("System is not initialized");
     this.operations.forEach((operation) => {
       const input: number[] = [];
       operation.inputPorts.forEach((port) => {

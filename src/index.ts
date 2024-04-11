@@ -230,7 +230,6 @@ const dot = (x: number, y: number) => {
   ctx.fill();
 };
 
-let previousInit = false;
 const render = () => {
   ctx.clearRect(0, 0, cnv.width, cnv.height);
   ctx.font = `${12 * scale}px Arial`;
@@ -293,10 +292,9 @@ const render = () => {
   }
 
   if (graphic.isComplete()) {
-    if (!previousInit) {
+    if (!graphic.isInitialized()) {
       graphic.setDt(0.01);
       graphic.init();
-      previousInit = true;
     }
     graphic.update();
 
@@ -339,8 +337,6 @@ const render = () => {
       }
       graphCtx.stroke();
     }
-  } else {
-    previousInit = false;
   }
 };
 

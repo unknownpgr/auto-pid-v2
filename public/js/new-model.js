@@ -94,10 +94,10 @@ export class System {
         this.connection = [];
         this.portMapping = {}; // Input port ID -> Output port ID that it is connected to
         this.outputBuffer = {}; // Output port ID -> Buffer
-        this.isInitialized = false;
+        this._isInitialized = false;
     }
     addOperation(spec) {
-        this.isInitialized = false;
+        this._isInitialized = false;
         const id = this.counter;
         this.counter += 2;
         const operation = new Operation(id, spec);
@@ -105,7 +105,7 @@ export class System {
         return id;
     }
     removeOperation(id) {
-        this.isInitialized = false;
+        this._isInitialized = false;
         this.getOperation(id).outputPorts.forEach((port) => {
             delete this.outputBuffer[port.id];
         });
@@ -134,7 +134,7 @@ export class System {
         return true;
     }
     connect(port1, port2) {
-        this.isInitialized = false;
+        this._isInitialized = false;
         if (!this.isConnectable(port1, port2))
             return;
         if (port1.type === "input")
@@ -142,7 +142,7 @@ export class System {
         this.connection.push({ from: port1, to: port2 });
     }
     disconnect(to) {
-        this.isInitialized = false;
+        this._isInitialized = false;
         if (to.type === "output")
             return;
         this.connection = this.connection.filter((connection) => connection.to.id !== to.id);
@@ -193,10 +193,13 @@ export class System {
         this.connection.forEach(({ from, to }) => {
             this.portMapping[to.id] = from.id;
         });
-        this.isInitialized = true;
+        this._isInitialized = true;
+    }
+    isInitialized() {
+        return this._isInitialized;
     }
     update() {
-        if (!this.isInitialized)
+        if (!this._isInitialized)
             throw new Error("System is not initialized");
         this.operations.forEach((operation) => {
             const input = [];

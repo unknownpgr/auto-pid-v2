@@ -203,5 +203,7 @@ export class GraphicSystem extends System {
 
     const op = this.getSelectedOperation();
     if (op) this.removeOperation(op.id);
+
+    this.selectedObject = null;
   }
 }
