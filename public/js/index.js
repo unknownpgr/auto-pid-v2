@@ -1,6 +1,6 @@
 // Implementation layer
 import { GraphicSystem } from "./graphic.js";
-import { op } from "./new-model.js";
+import { op } from "./core/model.js";
 let index = 0;
 const specs = [
     //Input

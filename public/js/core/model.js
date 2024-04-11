@@ -1,247 +1,217 @@
-export const EPSILON = 1e-6;
+function clone(a) {
+    return JSON.parse(JSON.stringify(a));
+}
+export const op = (spec) => spec;
 export class Operation {
-    constructor() {
+    constructor(id, spec) {
+        this.id = id;
+        this.spec = spec;
+        this.name = "";
+        this._transfer = {};
+        this.parameters = {};
+        this.parameterDescriptions = [];
+        this.state = {};
+        this.inputPorts = [];
+        this.outputPorts = [];
         this.dt = 0.01;
-        this.id = Operation.counter++ * 3;
+        this.init();
     }
-    setDt(dt) {
-        if (dt <= 0)
-            throw new Error("dt must be greater than 0");
-        if (dt < EPSILON)
-            throw new Error("dt is too small");
-        this.dt = dt;
+    get ports() {
+        return [...this.inputPorts, ...this.outputPorts];
     }
-    getDt() {
-        return this.dt;
+    init() {
+        this.name = this.spec.name;
+        this._transfer = this.spec.transfer;
+        this.state = clone(this.spec.initialState);
+        // Register parameters and parameter descriptions
+        this.parameters = {};
+        this.parameterDescriptions = [];
+        for (const key in this.spec.parameter) {
+            const parameter = this.spec.parameter[key];
+            this.parameters[key] = parameter.defaultValue;
+            const valueType = typeof parameter.defaultValue;
+            if (valueType !== "number" && valueType !== "string") {
+                throw new Error("Invalid parameter type");
+            }
+            this.parameterDescriptions.push({
+                key,
+                displayName: parameter.displayName,
+                description: parameter.description,
+                type: valueType,
+            });
+        }
+        // Register input and output ports
+        this.inputPorts = [];
+        this.outputPorts = [];
+        for (let i = 0; i < this.spec.inputs; i++) {
+            const portId = this.id * Math.pow(2, (i * 2));
+            this.inputPorts.push({
+                id: portId,
+                type: "input",
+                operationId: this.id,
+                index: i,
+            });
+        }
+        for (let i = 0; i < this.spec.outputs; i++) {
+            const portId = this.id * Math.pow(2, (i * 2 + 1));
+            this.outputPorts.push({
+                id: portId,
+                type: "output",
+                operationId: this.id,
+                index: i,
+            });
+        }
     }
-    getId() {
-        return this.id;
+    transfer(input) {
+        return this._transfer({
+            dt: this.dt,
+            state: this.state,
+            parameter: this.parameters,
+            input,
+        });
     }
-}
-Operation.counter = 0;
-export class Nullary extends Operation {
-    get out() {
-        return this.getId();
+    getParameterDescriptions() {
+        return this.parameterDescriptions;
     }
-    default() {
-        return 0;
+    setParameter(key, value) {
+        const description = this.parameterDescriptions.find((description) => description.key === key);
+        if (!description)
+            throw new Error(`Parameter not found: ${key}`);
+        if (description.type !== typeof value) {
+            throw new Error(`Invalid parameter type: ${key}`);
+        }
+        this.parameters[key] = value;
     }
-}
-export class Unary extends Operation {
-    get out() {
-        return this.getId();
-    }
-    get in() {
-        return this.getId() + 1;
-    }
-}
-export class Binary extends Operation {
-    get out() {
-        return this.getId();
-    }
-    get in1() {
-        return this.getId() + 1;
-    }
-    get in2() {
-        return this.getId() + 2;
-    }
-}
-export class Output extends Operation {
-    constructor(name) {
-        super();
-        this.data = [];
-        this.name = name;
-    }
-    get in() {
-        return this.getId() + 1;
-    }
-    transfer(value) {
-        this.data.push(value);
-    }
-    report() {
-        return { title: this.name, data: this.data };
+    getParameter(key) {
+        return this.parameters[key];
     }
 }
 export class System {
     constructor() {
-        this.edge = new Map();
+        this.epsilon = 1e-6;
+        this.counter = 1;
         this.operations = new Map();
-        this.nodeEdgeMapping = new Map(); // node -> edge
-        this.dt = 0.01;
-        this.isInitialized = false;
-        this.output = new Map(); // edge -> value
+        this.connection = [];
+        this.portMapping = {}; // Input port ID -> Output port ID that it is connected to
+        this.outputBuffer = {}; // Output port ID -> Buffer
+        this._isInitialized = false;
     }
-    getOperationId(nodeId) {
-        return Math.floor(nodeId / 3) * 3;
+    addOperation(spec) {
+        this._isInitialized = false;
+        const id = this.counter;
+        this.counter += 2;
+        const operation = new Operation(id, spec);
+        this.operations.set(id, operation);
+        return id;
     }
-    isOutputNode(nodeId) {
-        return nodeId % 3 === 0;
+    removeOperation(id) {
+        this._isInitialized = false;
+        this.getOperation(id).outputPorts.forEach((port) => {
+            delete this.outputBuffer[port.id];
+        });
+        this.operations.delete(id);
+        this.connection = this.connection.filter((connection) => connection.from.operationId !== id && connection.to.operationId !== id);
     }
-    hasOperation(id) {
-        return this.operations.has(id);
+    getOperation(id) {
+        const operation = this.operations.get(id);
+        if (!operation)
+            throw new Error(`Operation not found: ${id}`);
+        return operation;
     }
-    hasNode(nodeId) {
-        return this.hasOperation(this.getOperationId(nodeId));
+    getOperations() {
+        return Array.from(this.operations.values());
     }
-    isConnected(nodeId) {
-        for (const [from, to] of this.edge) {
-            if (to.includes(nodeId))
-                return true;
-            if (from === nodeId)
-                return true;
+    isConnectable(port1, port2) {
+        if (port1.type === port2.type)
+            return false;
+        if (port1.type === "input")
+            [port1, port2] = [port2, port1];
+        // If input port is already connected to another output port, it is not connectable.
+        for (const connection of this.connection) {
+            if (connection.to.id === port2.id)
+                return false;
         }
-        return false;
+        return true;
     }
-    isNullary(operation) {
-        return operation instanceof Nullary;
+    connect(port1, port2) {
+        this._isInitialized = false;
+        if (!this.isConnectable(port1, port2))
+            return;
+        if (port1.type === "input")
+            [port1, port2] = [port2, port1];
+        this.connection.push({ from: port1, to: port2 });
     }
-    isUnary(operation) {
-        return operation instanceof Unary;
+    disconnect(to) {
+        this._isInitialized = false;
+        if (to.type === "output")
+            return;
+        this.connection = this.connection.filter((connection) => connection.to.id !== to.id);
     }
-    isBinary(operation) {
-        return operation instanceof Binary;
-    }
-    isOutput(operation) {
-        return operation instanceof Output;
-    }
-    check() {
-        for (const operation of this.operations.values()) {
-            if (this.isNullary(operation)) {
-                if (!this.isConnected(operation.out))
-                    throw new Error(`Node ${operation.out} is not connected`);
-            }
-            else if (this.isUnary(operation)) {
-                if (!this.isConnected(operation.in))
-                    throw new Error(`Node ${operation.in} is not connected`);
-                if (!this.isConnected(operation.out))
-                    throw new Error(`Node ${operation.out} is not connected`);
-            }
-            else if (this.isBinary(operation)) {
-                if (!this.isConnected(operation.in1))
-                    throw new Error(`Node ${operation.in1} is not connected`);
-                if (!this.isConnected(operation.in2))
-                    throw new Error(`Node ${operation.in2} is not connected`);
-                if (!this.isConnected(operation.out))
-                    throw new Error(`Node ${operation.out} is not connected`);
-            }
-            else if (this.isOutput(operation)) {
-                if (!this.isConnected(operation.in))
-                    throw new Error(`Node ${operation.in} is not connected`);
-            }
-        }
-    }
-    register(...operations) {
-        if (this.isInitialized)
-            throw new Error("System is already initialized");
-        for (const operation of operations) {
-            if (this.hasOperation(operation.getId()))
-                throw new Error(`Operation ${operation.getId()} already exists`);
-            this.operations.set(operation.getId(), operation);
-        }
-    }
-    connect(from, to) {
-        if (this.isInitialized)
-            throw new Error("System is already initialized");
-        // Check if the nodes exist
-        if (!this.hasNode(from))
-            throw new Error(`Node ${from} does not exist`);
-        if (!this.hasNode(to))
-            throw new Error(`Node ${to} does not exist`);
-        // Check if the node types are correct
-        if (!this.isOutputNode(from))
-            throw new Error(`Node ${from} is not an output node`);
-        if (this.isOutputNode(to))
-            throw new Error(`Node ${to} is not an input node`);
-        // Check if to node is already connected
-        if (this.isConnected(to))
-            throw new Error(`Node ${to} is already connected`);
-        // Connect the nodes
-        if (this.edge.has(from)) {
-            this.edge.get(from).push(to);
-        }
-        else {
-            this.edge.set(from, [to]);
-        }
+    getConnections() {
+        return this.connection;
     }
     setDt(dt) {
-        if (this.isInitialized)
-            throw new Error("System is already initialized");
-        if (dt <= 0)
-            throw new Error("dt must be greater than 0");
-        if (dt < EPSILON)
-            throw new Error("dt is too small");
-        this.dt = dt;
+        this.operations.forEach((operation) => (operation.dt = dt));
+    }
+    setParameter(id, key, value) {
+        const operation = this.operations.get(id);
+        if (!operation)
+            throw new Error(`Operation not found: ${id}`);
+        operation.setParameter(key, value);
+    }
+    getParameterDescriptions(id) {
+        const operation = this.operations.get(id);
+        if (!operation)
+            throw new Error(`Operation not found: ${id}`);
+        return operation.getParameterDescriptions();
+    }
+    isComplete() {
+        const hashPort = (port) => `${port.operationId}-${port.type}-${port.index}`;
+        const connectedPorts = new Set();
+        this.connection.forEach((connection) => {
+            connectedPorts.add(hashPort(connection.from));
+            connectedPorts.add(hashPort(connection.to));
+        });
+        for (const operation of this.operations.values()) {
+            for (const port of operation.ports) {
+                if (!connectedPorts.has(hashPort(port)))
+                    return false;
+            }
+        }
+        return true;
     }
     init() {
-        if (this.isInitialized)
-            throw new Error("System is already initialized");
-        this.check();
-        let id = 0;
-        for (const [from, to] of this.edge) {
-            this.nodeEdgeMapping.set(from, id);
-            for (const t of to) {
-                this.nodeEdgeMapping.set(t, id);
-            }
-            this.output.set(id, 0);
-            id++;
+        if (!this.isComplete()) {
+            throw new Error("System is not complete");
         }
-        for (const operation of this.operations.values()) {
-            operation.setDt(this.dt);
-        }
-        for (const operation of this.operations.values()) {
-            if (this.isNullary(operation)) {
-                const edge = this.nodeEdgeMapping.get(operation.out);
-                this.output.set(edge, operation.default());
-            }
-        }
-        this.isInitialized = true;
+        this.operations.forEach((operation) => {
+            operation.init();
+            operation.outputPorts.forEach((port) => {
+                this.outputBuffer[port.id] = this.epsilon;
+            });
+        });
+        this.connection.forEach(({ from, to }) => {
+            this.portMapping[to.id] = from.id;
+        });
+        this._isInitialized = true;
     }
-    step() {
-        if (!this.isInitialized)
+    isInitialized() {
+        return this._isInitialized;
+    }
+    update() {
+        if (!this._isInitialized)
             throw new Error("System is not initialized");
-        const output = new Map();
-        for (const operation of this.operations.values()) {
-            let outputValue = 0;
-            if (this.isOutput(operation)) {
-                const edge = this.nodeEdgeMapping.get(operation.in);
-                const input = this.output.get(edge);
-                operation.transfer(input);
-                continue;
-            }
-            if (this.isNullary(operation)) {
-                outputValue = operation.transfer();
-            }
-            else if (this.isUnary(operation)) {
-                const edge = this.nodeEdgeMapping.get(operation.in);
-                const input = this.output.get(edge);
-                outputValue = operation.transfer(input);
-            }
-            else if (this.isBinary(operation)) {
-                const edge1 = this.nodeEdgeMapping.get(operation.in1);
-                const edge2 = this.nodeEdgeMapping.get(operation.in2);
-                const input1 = this.output.get(edge1);
-                const input2 = this.output.get(edge2);
-                outputValue = operation.transfer(input1, input2);
-            }
-            const op = operation;
-            const outputNode = op.out;
-            const edge = this.nodeEdgeMapping.get(outputNode);
-            output.set(edge, outputValue);
-        }
-        this.output = output;
-    }
-    run(duration) {
-        const steps = Math.floor(duration / this.dt);
-        for (let i = 0; i < steps; i++)
-            this.step();
-    }
-    report() {
-        const reports = [];
-        for (const operation of this.operations.values()) {
-            if (this.isOutput(operation)) {
-                reports.push(operation.report());
-            }
-        }
-        return reports;
+        this.operations.forEach((operation) => {
+            const input = [];
+            operation.inputPorts.forEach((port) => {
+                const outputPortId = this.portMapping[port.id];
+                const outputBuffer = this.outputBuffer[outputPortId];
+                input.push(outputBuffer);
+            });
+            const output = operation.transfer(input);
+            operation.outputPorts.forEach((port, i) => {
+                this.outputBuffer[port.id] = output[i];
+            });
+        });
     }
 }

@@ -1,4 +1,4 @@
-import { Operation, OperationSpec, Port, System } from "./new-model.js";
+import { Operation, OperationSpec, Port, System } from "./core/model.js";
 
 export interface Vector {
   x: number;

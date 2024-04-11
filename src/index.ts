@@ -1,7 +1,7 @@
 // Implementation layer
 
 import { GraphicSystem, Rect } from "./graphic.js";
-import { op } from "./new-model.js";
+import { op } from "./core/model.js";
 
 let index = 0;
 

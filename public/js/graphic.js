@@ -1,4 +1,4 @@
-import { System } from "./new-model.js";
+import { System } from "./core/model.js";
 export class GraphicSystem extends System {
     constructor() {
         super(...arguments);
